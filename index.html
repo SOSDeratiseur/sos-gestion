@@ -81,6 +81,11 @@ const nextFromFreq = (dateDebut, freq) => {
   return d.toISOString().slice(0, 10);
 };
 const dateColor = (d) => { if (!d) return "#6E7280"; const diff = (new Date(d + "T00:00:00") - new Date(today() + "T00:00:00")) / 86400000; return diff < 0 ? "#B4452F" : diff <= 14 ? "#C08A26" : "#3E8E5A"; };
+const doPassage = (contrat, contrats) => {
+  const ni = { ...blankInter(), clientId: contrat.clientId, date: today(), type: "Préventif", statut: "Réalisée" };
+  const nc = contrats.map((c) => c.id === contrat.id ? { ...c, prochainPassage: nextFromFreq(today(), c.frequence) } : c);
+  return { ni, nc };
+};
 
 const defaultSettings = {
   nom: "SOS Dératiseur", accroche: "GESTION · PCO", gerant: "", tva: "BE0687.940.529",
@@ -245,6 +250,14 @@ function App() {
     stations: (v) => { setStations(v); writeAll({ clients, inters, contrats, stations: v, settings }); },
   };
   const saveSettings = (v) => { setSettings(v); writeAll({ clients, inters, contrats, stations, settings: v }); };
+  const saveMany = (partial) => {
+    if (partial.clients) setClients(partial.clients);
+    if (partial.inters) setInters(partial.inters);
+    if (partial.contrats) setContrats(partial.contrats);
+    if (partial.stations) setStations(partial.stations);
+    if (partial.settings) setSettings(partial.settings);
+    writeAll({ clients, inters, contrats, stations, settings, ...partial });
+  };
 
   const clientName = (id) => clients.find((c) => c.id === id)?.nom || "Client supprimé";
 
@@ -293,10 +306,10 @@ function App() {
           <header className="mobile-only" style={{ background: C.navy, padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><Brand settings={settings} /><button onClick={() => supabase.auth.signOut()} style={{ background: "transparent", border: "none", color: "#7B8094", cursor: "pointer" }}><LogOut size={20} /></button></header>
           <div style={{ padding: "22px 18px", maxWidth: 980, margin: "0 auto" }}>
             {!ready ? <p style={{ color: C.muted }}>Chargement…</p> : <>
-              {view === "dashboard" && <Dashboard {...{ clients, inters, contrats, stations, clientName, setView, save }} />}
+              {view === "dashboard" && <Dashboard {...{ clients, inters, contrats, stations, clientName, setView, save, saveMany }} />}
               {view === "inters" && <Interventions {...{ inters, clients, save, clientName, settings }} />}
               {view === "clients" && <Clients {...{ clients, save, inters, settings, contrats }} />}
-              {view === "contrats" && <Contrats {...{ contrats, clients, save, clientName }} />}
+              {view === "contrats" && <Contrats {...{ contrats, clients, save, clientName, inters, saveMany }} />}
               {view === "stations" && <Stations {...{ stations, clients, save }} />}
               {view === "data" && <><CompanySettings settings={settings} onSave={saveSettings} /><DataModule {...{ clients, inters, contrats, stations, save }} /></>}
             </>}
@@ -346,8 +359,14 @@ function Card({ children, style }) {
 }
 
 /* ----------------------------------------------------------- DASHBOARD */
-function Dashboard({ clients, inters, contrats, stations, clientName, setView, save }) {
+function Dashboard({ clients, inters, contrats, stations, clientName, setView, save, saveMany }) {
   const now = today();
+  const [interModal, setInterModal] = useState(null);
+  const onPassage = (c) => {
+    const { ni, nc } = doPassage(c, contrats);
+    saveMany({ inters: [...inters, ni], contrats: nc });
+    setInterModal(ni);
+  };
   const planned = inters.filter((i) => i.statut === "Planifiée");
   const upcoming = [...planned].filter((i) => i.date >= now).sort((a, b) => a.date.localeCompare(b.date));
   const thisMonth = inters.filter((i) => i.statut === "Réalisée" && i.date.slice(0, 7) === now.slice(0, 7)).length;
@@ -415,6 +434,7 @@ function Dashboard({ clients, inters, contrats, stations, clientName, setView, s
                 <span style={{ width: 9, height: 9, borderRadius: "50%", background: dateColor(c.prochainPassage), flexShrink: 0 }} />
                 <input type="date" value={c.prochainPassage || ""} onChange={(e) => setRappel(c.id, e.target.value)} style={{ ...inputStyle, width: "auto", padding: "6px 9px", fontSize: 13, color: dateColor(c.prochainPassage), fontWeight: 600 }} />
                 {!c.prochainPassage && <Button variant="ghost" style={{ padding: "6px 9px", fontSize: 12.5 }} onClick={() => setRappel(c.id, nextFromFreq(c.dateDebut, c.frequence))}>Auto</Button>}
+                <Button style={{ padding: "6px 10px", fontSize: 12.5, whiteSpace: "nowrap" }} onClick={() => onPassage(c)}><Check size={14} /> Passage effectué</Button>
               </div>
             </div>))}
           </div>}
@@ -447,6 +467,7 @@ function Dashboard({ clients, inters, contrats, stations, clientName, setView, s
         </div>
       </div>
       {clients.length === 0 && <div className="mt-6"><Button onClick={() => setView("clients")}><Plus size={16} /> Créer mon premier client</Button></div>}
+      {interModal && <InterModal it={interModal} clients={clients} onClose={() => setInterModal(null)} onSave={(it) => { save.inters(inters.map((x) => x.id === it.id ? it : x)); setInterModal(null); }} />}
     </>
   );
 }
@@ -847,8 +868,14 @@ function ClientDetail({ client, inters, contrats, settings, onClose, onDoc }) {
 /* ------------------------------------------------------------- CONTRATS */
 const blankContrat = () => ({ id: uid(), clientId: "", niveau: "Confort", frequence: "Trimestriel", dateDebut: today(), prixHT: "", actif: true, prochainPassage: "" });
 
-function Contrats({ contrats, clients, save, clientName }) {
+function Contrats({ contrats, clients, save, clientName, inters, saveMany }) {
   const [modal, setModal] = useState(null);
+  const [interModal, setInterModal] = useState(null);
+  const onPassage = (c) => {
+    const { ni, nc } = doPassage(c, contrats);
+    saveMany({ inters: [...inters, ni], contrats: nc });
+    setInterModal(ni);
+  };
   const upsert = (c) => { const ex = contrats.some((x) => x.id === c.id); save.contrats(ex ? contrats.map((x) => x.id === c.id ? c : x) : [...contrats, c]); setModal(null); };
   const del = (id) => save.contrats(contrats.filter((x) => x.id !== id));
   const totalYear = contrats.filter((c) => c.actif).reduce((s, c) => {
@@ -874,11 +901,15 @@ function Contrats({ contrats, clients, save, clientName }) {
                 <div style={{ fontSize: 14, color: C.gold, fontWeight: 700, marginTop: 3 }}>{eur(c.prixHT)} / passage</div>
                 {c.prochainPassage && <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 3, color: dateColor(c.prochainPassage) }}>Prochain passage : {fmtDate(c.prochainPassage)}</div>}
               </div>
-              <div className="flex gap-1.5"><Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => setModal(c)}><Pencil size={15} /></Button><Button variant="danger" style={{ padding: "6px 9px" }} onClick={() => del(c.id)}><Trash2 size={15} /></Button></div>
+              <div className="flex flex-col gap-1.5 flex-shrink-0">
+                <Button style={{ padding: "6px 10px", fontSize: 12.5, whiteSpace: "nowrap" }} onClick={() => onPassage(c)}><Check size={14} /> Passage effectué</Button>
+                <div className="flex gap-1.5"><Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => setModal(c)}><Pencil size={15} /></Button><Button variant="danger" style={{ padding: "6px 9px" }} onClick={() => del(c.id)}><Trash2 size={15} /></Button></div>
+              </div>
             </div>
           </Card>))}
         </div>}
       {modal && <ContratModal ct={modal} clients={clients} onClose={() => setModal(null)} onSave={upsert} />}
+      {interModal && <InterModal it={interModal} clients={clients} onClose={() => setInterModal(null)} onSave={(it) => { save.inters(inters.map((x) => x.id === it.id ? it : x)); setInterModal(null); }} />}
     </>
   );
 }
