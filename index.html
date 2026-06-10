@@ -71,6 +71,16 @@ const fmtDate = (s) => s ? new Date(s + "T00:00:00").toLocaleDateString("fr-BE",
 const today = () => new Date().toISOString().slice(0, 10);
 const eur = (n) => (Number(n) || 0).toLocaleString("fr-BE", { style: "currency", currency: "EUR" });
 const slug = (s) => (s || "client").replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
+const FREQ_MONTHS = { Mensuel: 1, Bimestriel: 2, Trimestriel: 3, Semestriel: 6, Annuel: 12 };
+const nextFromFreq = (dateDebut, freq) => {
+  const m = FREQ_MONTHS[freq] || 3;
+  const now = new Date(today() + "T00:00:00");
+  let d = new Date((dateDebut || today()) + "T00:00:00");
+  if (isNaN(d)) d = new Date(now);
+  while (d <= now) d.setMonth(d.getMonth() + m);
+  return d.toISOString().slice(0, 10);
+};
+const dateColor = (d) => { if (!d) return "#6E7280"; const diff = (new Date(d + "T00:00:00") - new Date(today() + "T00:00:00")) / 86400000; return diff < 0 ? "#B4452F" : diff <= 14 ? "#C08A26" : "#3E8E5A"; };
 
 const defaultSettings = {
   nom: "SOS Dératiseur", accroche: "GESTION · PCO", gerant: "", tva: "BE0687.940.529",
@@ -283,7 +293,7 @@ function App() {
           <header className="mobile-only" style={{ background: C.navy, padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><Brand settings={settings} /><button onClick={() => supabase.auth.signOut()} style={{ background: "transparent", border: "none", color: "#7B8094", cursor: "pointer" }}><LogOut size={20} /></button></header>
           <div style={{ padding: "22px 18px", maxWidth: 980, margin: "0 auto" }}>
             {!ready ? <p style={{ color: C.muted }}>Chargement…</p> : <>
-              {view === "dashboard" && <Dashboard {...{ clients, inters, contrats, stations, clientName, setView }} />}
+              {view === "dashboard" && <Dashboard {...{ clients, inters, contrats, stations, clientName, setView, save }} />}
               {view === "inters" && <Interventions {...{ inters, clients, save, clientName, settings }} />}
               {view === "clients" && <Clients {...{ clients, save, inters, settings, contrats }} />}
               {view === "contrats" && <Contrats {...{ contrats, clients, save, clientName }} />}
@@ -336,13 +346,15 @@ function Card({ children, style }) {
 }
 
 /* ----------------------------------------------------------- DASHBOARD */
-function Dashboard({ clients, inters, contrats, stations, clientName, setView }) {
+function Dashboard({ clients, inters, contrats, stations, clientName, setView, save }) {
   const now = today();
   const planned = inters.filter((i) => i.statut === "Planifiée");
   const upcoming = [...planned].filter((i) => i.date >= now).sort((a, b) => a.date.localeCompare(b.date));
   const thisMonth = inters.filter((i) => i.statut === "Réalisée" && i.date.slice(0, 7) === now.slice(0, 7)).length;
   const activeContracts = contrats.filter((c) => c.actif).length;
   const suivis = inters.filter((i) => i.suiviRequis && i.prochaineDate).sort((a, b) => a.prochaineDate.localeCompare(b.prochaineDate));
+  const rappels = contrats.filter((c) => c.actif).sort((a, b) => (a.prochainPassage || "9999").localeCompare(b.prochainPassage || "9999"));
+  const setRappel = (id, d) => save.contrats(contrats.map((x) => x.id === id ? { ...x, prochainPassage: d } : x));
 
   const monthly = useMemo(() => {
     const out = [];
@@ -385,6 +397,27 @@ function Dashboard({ clients, inters, contrats, stations, clientName, setView })
             <Bar dataKey="n" fill={C.gold} radius={[6, 6, 0, 0]} name="Réalisées" />
           </BarChart>
         </ResponsiveContainer>
+      </Card>
+
+      <Card style={{ marginBottom: 20 }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold" style={{ color: C.navy }}>À recontacter / Rappels</h3>
+          <span style={{ fontSize: 12, color: C.muted }}>date modifiable</span>
+        </div>
+        {rappels.length === 0 ? <p style={{ color: C.muted, fontSize: 14 }}>Aucun contrat actif. Les rappels de passage apparaîtront ici.</p> :
+          <div className="flex flex-col gap-2">{rappels.map((c) => (
+            <div key={c.id} className="flex justify-between items-center gap-3 flex-wrap" style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "10px 12px" }}>
+              <div style={{ minWidth: 0 }}>
+                <div className="font-semibold" style={{ color: C.navy }}>{clientName(c.clientId)}</div>
+                <div style={{ fontSize: 12.5, color: C.muted }}>{c.niveau} · {c.frequence}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span style={{ width: 9, height: 9, borderRadius: "50%", background: dateColor(c.prochainPassage), flexShrink: 0 }} />
+                <input type="date" value={c.prochainPassage || ""} onChange={(e) => setRappel(c.id, e.target.value)} style={{ ...inputStyle, width: "auto", padding: "6px 9px", fontSize: 13, color: dateColor(c.prochainPassage), fontWeight: 600 }} />
+                {!c.prochainPassage && <Button variant="ghost" style={{ padding: "6px 9px", fontSize: 12.5 }} onClick={() => setRappel(c.id, nextFromFreq(c.dateDebut, c.frequence))}>Auto</Button>}
+              </div>
+            </div>))}
+          </div>}
       </Card>
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -812,7 +845,7 @@ function ClientDetail({ client, inters, contrats, settings, onClose, onDoc }) {
 }
 
 /* ------------------------------------------------------------- CONTRATS */
-const blankContrat = () => ({ id: uid(), clientId: "", niveau: "Confort", frequence: "Trimestriel", dateDebut: today(), prixHT: "", actif: true });
+const blankContrat = () => ({ id: uid(), clientId: "", niveau: "Confort", frequence: "Trimestriel", dateDebut: today(), prixHT: "", actif: true, prochainPassage: "" });
 
 function Contrats({ contrats, clients, save, clientName }) {
   const [modal, setModal] = useState(null);
@@ -839,6 +872,7 @@ function Contrats({ contrats, clients, save, clientName }) {
                 <div className="flex items-center gap-2 flex-wrap mb-1"><span className="font-bold" style={{ color: C.navy }}>{clientName(c.clientId)}</span><Badge color={c.actif ? C.green : C.muted}>{c.actif ? "Actif" : "Suspendu"}</Badge></div>
                 <div style={{ fontSize: 13, color: C.muted }}>{c.niveau} · {c.frequence} · depuis {fmtDate(c.dateDebut)}</div>
                 <div style={{ fontSize: 14, color: C.gold, fontWeight: 700, marginTop: 3 }}>{eur(c.prixHT)} / passage</div>
+                {c.prochainPassage && <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 3, color: dateColor(c.prochainPassage) }}>Prochain passage : {fmtDate(c.prochainPassage)}</div>}
               </div>
               <div className="flex gap-1.5"><Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => setModal(c)}><Pencil size={15} /></Button><Button variant="danger" style={{ padding: "6px 9px" }} onClick={() => del(c.id)}><Trash2 size={15} /></Button></div>
             </div>
@@ -862,6 +896,12 @@ function ContratModal({ ct, clients, onClose, onSave }) {
         <Field label="Date de début"><TextInput type="date" value={f.dateDebut} onChange={(e) => set("dateDebut", e.target.value)} /></Field>
         <Field label="Prix HT / passage (€)"><TextInput type="number" value={f.prixHT} onChange={(e) => set("prixHT", e.target.value)} /></Field>
       </div>
+      <Field label="Prochain passage / à recontacter">
+        <div className="flex gap-2">
+          <TextInput type="date" value={f.prochainPassage || ""} onChange={(e) => set("prochainPassage", e.target.value)} />
+          <Button variant="ghost" style={{ whiteSpace: "nowrap", padding: "9px 11px" }} onClick={() => set("prochainPassage", nextFromFreq(f.dateDebut, f.frequence))} title="Calculer depuis la fréquence">Auto</Button>
+        </div>
+      </Field>
       <label className="flex items-center gap-2 text-sm font-semibold" style={{ color: C.text }}><input type="checkbox" checked={f.actif} onChange={(e) => set("actif", e.target.checked)} /> Contrat actif</label>
     </Modal>
   );
