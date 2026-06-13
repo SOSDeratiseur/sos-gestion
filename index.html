@@ -56,6 +56,17 @@ const NIVEAUX = ["Essentiel","Confort","Premium"];
 const FREQUENCES = ["Mensuel","Bimestriel","Trimestriel","Semestriel","Annuel"];
 const STATION_TYPES = ["Poste d'appâtage sécurisé","Piège mécanique","Détecteur","Piège lumineux"];
 const IPM_EQUIP_TYPES = ["Poste d'appâtage sécurisé","Piège mécanique","DEIV (destructeur d'insectes volants)","Plaque / tube de glu","Détecteur connecté","Station extérieure","Piège à phéromones","Autre"];
+const TYPE_VISITE = ["Visite contractuelle","Visite de contrôle","Intervention curative","Urgence","Suivi"];
+const ZONES = ["Cuisine / production","Stockage sec","Chambres froides","Zone déchets / poubelles","Salle / accueil","Sanitaires","Cave / sous-sol","Grenier / combles","Extérieur / périmètre","Local technique","Quai de livraison"];
+const INDICES = ["Excréments","Traces de passage","Dégâts matériels","Bruits signalés","Captures"];
+const ACTIONS_VISITE = ["Contrôle des postes d'appâtage","Recharge / remplacement des appâts","Pose de nouveaux postes","Retrait de postes","Application insecticide","Pose / relevé de pièges","Nettoyage des postes","Conseil hygiène au client"];
+const POINTS_CRITIQUES = ["Trous / passages dans murs ou plinthes","Portes non étanches (bas de porte)","Déchets / poubelles mal gérés","Denrées stockées au sol","Végétation / encombrement périmètre","Points d'eau accessibles","Égouts / avaloirs non protégés","Zones difficiles d'accès"];
+const NUISIBLES_INFEST = ["Rats","Souris","Blattes / cafards","Fourmis","Mites alimentaires","Mouches / moucherons","Punaises de lit"];
+const NIVEAUX_INFEST = ["Absent","Faible","Moyen","Fort"];
+const TENDANCES = ["Stable","Hausse","Baisse"];
+const CONSO = ["0","¼","½","¾","Totale"];
+const ETAT_POSTE = ["RAS","Consommation","Poste dégradé","Inaccessible","Remplacé","Nouveau"];
+const EQUIP_CODES = ["RI - rodonticide intérieur","RE - rodonticide extérieur","MC - piège mécanique","G - glu","DEIV - détecteur insectes","PH - piège phéromone"];
 const ACTIVITES = ["RAS","Traces","Activité faible","Activité forte","Capture"];
 const HACCP = ["Local accessible et propre","Postes d'appâtage intègres","Aucune denrée exposée à proximité","Traçabilité produits à jour","Recommandations remises au client"];
 
@@ -111,8 +122,18 @@ function fileToLogo(file, cb) {
 }
 
 /* ----------------------------------------------------------- IPM + photos */
-const blankEquip = () => ({ id: uid(), type: IPM_EQUIP_TYPES[0], numero: "", emplacement: "", activite: "RAS", consommation: "", action: "" });
-const blankIpm = (clientId) => ({ id: uid(), clientId, date: today(), equipements: [], observations: "", recommandations: "", photos: [] });
+const blankEquip = () => ({ id: uid(), type: EQUIP_CODES[0], numero: "", emplacement: "", consommation: "0", etat: "RAS", action: "" });
+const blankReco = () => ({ id: uid(), texte: "", responsable: "", echeance: "" });
+const blankProduit = () => ({ id: uid(), nom: "", substance: "", autorisation: "", quantite: "", zone: "" });
+const blankIpm = (clientId) => ({
+  id: uid(), clientId, date: today(), siteNom: "",
+  heureArrivee: "", heureDepart: "", technicien: "", numRapport: "",
+  typeVisite: "Visite contractuelle",
+  zones: [], activiteDetectee: "Non", especes: "", indices: [], constat: "",
+  actions: [], equipements: [], produits: [], infestation: {}, pointsCritiques: [],
+  observations: "", recommandations: [], suiviPrecedent: "Sans objet",
+  sousControle: "Oui", visiteSupp: "Non", prochainPassage: "", remarquesClient: "", photos: [],
+});
 
 function compressImage(file) {
   return new Promise((res, rej) => {
@@ -165,6 +186,22 @@ const inputStyle = { background: "#fff", border: `1px solid ${C.line}`, color: C
 const TextInput = (p) => <input {...p} style={{ ...inputStyle, ...(p.style || {}) }} />;
 const Select = ({ children, ...p }) => <select {...p} style={inputStyle}>{children}</select>;
 const TextArea = (p) => <textarea {...p} style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} />;
+function CheckGroup({ options, value, onChange, cols = 1 }) {
+  const v = value || [];
+  const toggle = (o) => onChange(v.includes(o) ? v.filter((x) => x !== o) : [...v, o]);
+  return (
+    <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${cols},1fr)` }}>
+      {options.map((o) => (
+        <label key={o} className="flex items-center gap-2" style={{ color: C.text, fontSize: 13 }}>
+          <input type="checkbox" checked={v.includes(o)} onChange={() => toggle(o)} /> {o}
+        </label>
+      ))}
+    </div>
+  );
+}
+function SubHead({ children }) {
+  return <div style={{ fontWeight: 700, color: C.navy, fontSize: 14, marginTop: 6, paddingTop: 10, borderTop: `1px solid ${C.line}` }}>{children}</div>;
+}
 
 function Button({ variant = "primary", children, ...p }) {
   const styles = {
@@ -635,6 +672,134 @@ async function buildAttestation(client, s, contrat, pests) {
   return doc.output("bloburl");
 }
 
+async function buildIpmPdf(report, client, s, contrat) {
+  const JsPDF = await loadJsPDF();
+  const doc = new JsPDF({ unit: "mm", format: "a4" });
+  const W = 210, M = 14;
+  let y = 0;
+  const header = () => {
+    doc.setFillColor(26, 31, 46); doc.rect(0, 0, W, 26, "F");
+    let tx = M;
+    if (s.logo) { try { doc.addImage(s.logo, "PNG", M, 5, 14, 14); tx = 34; } catch (e) {} }
+    doc.setTextColor(181, 134, 58); doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.text(s.nom || "", tx, 12);
+    doc.setTextColor(245, 240, 232); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.text("Dossier de suivi IPM — lutte intégrée contre les nuisibles", tx, 17);
+    doc.setFontSize(7.5); doc.setTextColor(245, 240, 232); doc.text("Passage du " + fmtDate(report.date), W - M, 12, { align: "right" });
+    y = 33;
+  };
+  const footer = () => {
+    const fy = 288; doc.setDrawColor(181, 134, 58); doc.setLineWidth(0.4); doc.line(M, fy - 4, W - M, fy - 4);
+    doc.setFontSize(7); doc.setTextColor(110, 114, 128);
+    const foot = [s.zone, s.telephone, s.email, s.tva ? "TVA " + s.tva : ""].filter(Boolean).join("   ·   ");
+    doc.text(foot, W / 2, fy, { align: "center" });
+  };
+  const ensure = (h) => { if (y + h > 280) { footer(); doc.addPage(); header(); } };
+  const sec = (t) => { ensure(11); doc.setFillColor(245, 240, 232); doc.rect(M, y, W - 2 * M, 6.5, "F"); doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(181, 134, 58); doc.text(t.toUpperCase(), M + 2, y + 4.6); y += 10; };
+  const kv = (k, v, x, w) => { doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(26, 31, 46); doc.text(k, x, y); doc.setFont("helvetica", "normal"); doc.setTextColor(40, 42, 54); const lines = doc.splitTextToSize(String(v || "—"), w); doc.text(lines, x + 30, y); return lines.length; };
+  const box = (x, yy, on) => { doc.setDrawColor(120); doc.setLineWidth(0.3); doc.rect(x, yy - 3, 3, 3); if (on) { doc.setDrawColor(62, 142, 90); doc.setLineWidth(0.6); doc.line(x + 0.5, yy - 1.4, x + 1.3, yy - 0.6); doc.line(x + 1.3, yy - 0.6, x + 2.7, yy - 2.6); } };
+  const checks = (options, selected) => {
+    const sel = selected || []; const colW = (W - 2 * M) / 2;
+    for (let i = 0; i < options.length; i += 2) {
+      ensure(6);
+      for (let j = 0; j < 2 && i + j < options.length; j++) {
+        const o = options[i + j], x = M + j * colW;
+        box(x, y, sel.includes(o)); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54);
+        doc.text(doc.splitTextToSize(o, colW - 6)[0], x + 5, y);
+      }
+      y += 5.5;
+    }
+    y += 1;
+  };
+
+  header();
+  // Identification + contrat
+  sec("Identification du client");
+  doc.text("", M, y);
+  let n = kv("Raison soc.", client?.nom, M, 70); kv("N° TVA", client?.tva, W / 2, 60); y += Math.max(n, 1) * 4.5 + 1.5;
+  n = kv("Adresse", client?.adresse, M, W - 2 * M - 30); y += n * 4.5 + 1.5;
+  kv("Contact", client?.contact, M, 60); kv("Tél.", client?.telephone, W / 2, 60); y += 6;
+  kv("Type", client?.type, M, 60); if (contrat) kv("Contrat", `${contrat.niveau} · ${contrat.frequence}`, W / 2, 60); y += 8;
+
+  sec("Informations sur la visite");
+  kv("Date", fmtDate(report.date), M, 50); kv("Type", report.typeVisite, W / 2, 60); y += 6;
+  if (report.siteNom) { kv("Site", report.siteNom, M, W - 2 * M - 30); y += 6; }
+  kv("Arrivée", report.heureArrivee, M, 40); kv("Départ", report.heureDepart, W / 2, 40); y += 6;
+  kv("Technicien", report.technicien, M, 60); kv("N° rapport", report.numRapport, W / 2, 50); y += 9;
+
+  sec("Zones inspectées"); checks(ZONES, report.zones);
+  sec("Constat général");
+  kv("Activité détectée", report.activiteDetectee, M, 30); kv("Espèces", report.especes, W / 2, 60); y += 7;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(26, 31, 46); doc.text("Indices :", M, y); y += 5; checks(INDICES, report.indices);
+  if (report.constat) { ensure(12); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54); const l = doc.splitTextToSize(report.constat, W - 2 * M); doc.text(l, M, y); y += l.length * 4.5 + 3; }
+
+  sec("Actions réalisées"); checks(ACTIONS_VISITE, report.actions);
+
+  sec("Relevé des postes & pièges");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(95, 95, 95);
+  doc.text("N°", M, y); doc.text("Emplacement", M + 12, y); doc.text("Type", M + 78, y); doc.text("Conso", M + 120, y); doc.text("État", M + 138, y); doc.text("Action", M + 160, y); y += 1.5;
+  doc.setDrawColor(210); doc.setLineWidth(0.2); doc.line(M, y, W - M, y); y += 4;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(40, 42, 54);
+  (report.equipements || []).forEach((e) => {
+    ensure(6);
+    doc.text(String(e.numero || "—"), M, y);
+    doc.text(doc.splitTextToSize(e.emplacement || "—", 62)[0], M + 12, y);
+    doc.text((e.type || "").split(" - ")[0], M + 78, y);
+    doc.text(String(e.consommation || "—"), M + 120, y);
+    doc.text(doc.splitTextToSize(e.etat || "—", 20)[0], M + 138, y);
+    doc.text(doc.splitTextToSize(e.action || "—", 36)[0], M + 160, y);
+    y += 5.5;
+  });
+  if (!(report.equipements || []).length) { doc.text("Aucun poste enregistré.", M, y); y += 6; }
+  y += 2;
+
+  if ((report.produits || []).length) {
+    sec("Produits biocides utilisés");
+    report.produits.forEach((p) => { ensure(6); doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(40, 42, 54); doc.text(doc.splitTextToSize(`${p.nom || "—"} · ${p.substance || "—"} · autoris. ${p.autorisation || "—"} · ${p.quantite || "—"} · ${p.zone || "—"}`, W - 2 * M)[0], M, y); y += 5.5; });
+    y += 2;
+  }
+
+  sec("Niveau d'infestation");
+  NUISIBLES_INFEST.forEach((nm) => { const inf = (report.infestation || {})[nm]; if (inf && (inf.niveau !== "Absent" || inf.tendance !== "Stable")) { ensure(5.5); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54); doc.text(`${nm} : ${inf.niveau} (${inf.tendance})`, M, y); y += 5; } });
+  y += 2;
+
+  if ((report.pointsCritiques || []).length) { sec("Points critiques"); checks(POINTS_CRITIQUES, report.pointsCritiques); }
+  if (report.observations) { sec("Observations"); ensure(12); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54); const l = doc.splitTextToSize(report.observations, W - 2 * M); doc.text(l, M, y); y += l.length * 4.5 + 3; }
+
+  if ((report.recommandations || []).length) {
+    sec("Recommandations");
+    report.recommandations.forEach((rc, i) => { ensure(6); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54); const l = doc.splitTextToSize(`${i + 1}. ${rc.texte || "—"}${rc.responsable ? " — " + rc.responsable : ""}${rc.echeance ? " (éch. " + rc.echeance + ")" : ""}`, W - 2 * M); doc.text(l, M, y); y += l.length * 4.5 + 1.5; });
+    ensure(6); doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.text("Suivi recommandations précédentes : ", M, y); doc.setFont("helvetica", "normal"); doc.text(report.suiviPrecedent || "—", M + 62, y); y += 8;
+  }
+
+  sec("Synthèse & attestation");
+  kv("Sous contrôle", report.sousControle, M, 20); kv("Visite suppl.", report.visiteSupp, W / 2, 20); y += 6;
+  kv("Prochain passage", report.prochainPassage ? fmtDate(report.prochainPassage) : "—", M, 50); y += 6;
+  if (report.remarquesClient) { doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); const l = doc.splitTextToSize("Remarques client : " + report.remarquesClient, W - 2 * M); doc.text(l, M, y); y += l.length * 4.5; }
+  y += 6; ensure(20);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54);
+  doc.text("Technicien : " + (report.technicien || ""), M, y); doc.text("Signature client :", W / 2, y);
+  doc.setDrawColor(190); doc.line(M + 26, y, W / 2 - 8, y); doc.line(W / 2 + 26, y, W - M, y); y += 10;
+
+  // Photos
+  const phs = report.photos || [];
+  if (phs.length) {
+    const map = await signedUrls(phs.map((p) => p.path));
+    sec("Photos");
+    const cw = (W - 2 * M - 6) / 2, ch = 50;
+    for (let i = 0; i < phs.length; i++) {
+      if (i % 2 === 0) ensure(ch + 4);
+      const url = map[phs[i].path]; const x = M + (i % 2) * (cw + 6);
+      if (url) {
+        try { const res = await fetch(url); const blob = await res.blob(); const dataUrl = await new Promise((rs) => { const fr = new FileReader(); fr.onload = () => rs(fr.result); fr.readAsDataURL(blob); }); doc.addImage(dataUrl, "JPEG", x, y, cw, ch); doc.setDrawColor(210); doc.rect(x, y, cw, ch); } catch (e) {}
+      }
+      if (i % 2 === 1) y += ch + 4;
+    }
+    if (phs.length % 2 === 1) y += ch + 4;
+  }
+
+  footer();
+  return doc.output("bloburl");
+}
+
 function FicheModal({ url, filename, title = "Document", onClose }) {
   return (
     <Modal open onClose={onClose} title={title}
@@ -892,6 +1057,12 @@ function ClientDetail({ client, inters, contrats, settings, ipm, saveIpm, onClos
   };
   const saveReport = (rep) => { const ex = (ipm || []).some((x) => x.id === rep.id); saveIpm(ex ? ipm.map((x) => x.id === rep.id ? rep : x) : [...(ipm || []), rep]); setIpmEditing(null); };
   const delReport = (id) => { if (confirm("Supprimer ce rapport IPM ?")) saveIpm((ipm || []).filter((x) => x.id !== id)); };
+  const genIpm = async (rep) => {
+    setBusy(rep.id);
+    try { const url = await buildIpmPdf(rep, client, settings, contrat); onDoc({ url, filename: `dossier-ipm-${slug(client.nom)}-${rep.date}.pdf`, title: "Dossier IPM" }); }
+    catch (e) { alert("PDF impossible. Vérifie ta connexion internet."); }
+    finally { setBusy(null); }
+  };
   return (
     <Modal open onClose={onClose} title={`Dossier · ${client.nom}`}
       footer={<Button variant="ghost" onClick={onClose}>Fermer</Button>}>
@@ -912,9 +1083,10 @@ function ClientDetail({ client, inters, contrats, settings, ipm, saveIpm, onClos
           <div className="flex flex-col gap-2">{myIpm.map((r) => (
             <div key={r.id} className="flex justify-between items-center gap-2" style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "9px 11px" }}>
               <div onClick={() => setIpmEditing(r)} style={{ cursor: "pointer", flex: 1 }}>
-                <div className="font-semibold" style={{ color: C.navy, fontSize: 13.5 }}>Passage du {fmtDate(r.date)}</div>
+                <div className="font-semibold" style={{ color: C.navy, fontSize: 13.5 }}>Passage du {fmtDate(r.date)}{r.siteNom ? ` · ${r.siteNom}` : ""}</div>
                 <div style={{ fontSize: 12, color: C.muted }}>{r.equipements.length} équipement(s){r.photos?.length ? ` · ${r.photos.length} photo(s)` : ""}</div>
               </div>
+              <Button variant="ghost" style={{ padding: "6px 9px" }} title="PDF du dossier" onClick={() => genIpm(r)}>{busy === r.id ? <span style={{ fontSize: 12 }}>…</span> : <FileText size={14} />}</Button>
               <Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => setIpmEditing(r)}><Pencil size={14} /></Button>
               <Button variant="danger" style={{ padding: "6px 9px" }} onClick={() => delReport(r.id)}><Trash2 size={14} /></Button>
             </div>))}
@@ -931,13 +1103,18 @@ function ClientDetail({ client, inters, contrats, settings, ipm, saveIpm, onClos
             </div>))}
           </div>}
       </div>
-      {ipmEditing && <IPMEditor report={ipmEditing} previous={myIpm.find((r) => r.id !== ipmEditing.id)} onClose={() => setIpmEditing(null)} onSave={saveReport} />}
+      {ipmEditing && <IPMEditor report={ipmEditing} client={client} history={myIpm} onClose={() => setIpmEditing(null)} onSave={saveReport} />}
     </Modal>
   );
 }
 
-function IPMEditor({ report, previous, onClose, onSave }) {
-  const [r, setR] = useState(report);
+function IPMEditor({ report, client, history, onClose, onSave }) {
+  const [r, setR] = useState(() => {
+    const merged = { ...blankIpm(report.clientId), ...report };
+    ["zones", "indices", "actions", "pointsCritiques", "equipements", "produits", "recommandations", "photos"].forEach((k) => { if (!Array.isArray(merged[k])) merged[k] = []; });
+    if (!merged.infestation || typeof merged.infestation !== "object") merged.infestation = {};
+    return merged;
+  });
   const [uploading, setUploading] = useState(false);
   const [urls, setUrls] = useState({});
   useEffect(() => {
@@ -946,77 +1123,158 @@ function IPMEditor({ report, previous, onClose, onSave }) {
     signedUrls(missing).then((m) => setUrls((prev) => ({ ...prev, ...m })));
   }, [r.photos]);
   const set = (k, v) => setR((p) => ({ ...p, [k]: v }));
-  const setEquip = (id, k, v) => setR((p) => ({ ...p, equipements: p.equipements.map((e) => e.id === id ? { ...e, [k]: v } : e) }));
-  const addEquip = () => setR((p) => ({ ...p, equipements: [...p.equipements, blankEquip()] }));
-  const removeEquip = (id) => setR((p) => ({ ...p, equipements: p.equipements.filter((e) => e.id !== id) }));
+  const setIn = (list, id, k, v) => setR((p) => ({ ...p, [list]: p[list].map((e) => e.id === id ? { ...e, [k]: v } : e) }));
+  const addIn = (list, blank) => setR((p) => ({ ...p, [list]: [...p[list], blank()] }));
+  const rmIn = (list, id) => setR((p) => ({ ...p, [list]: p[list].filter((e) => e.id !== id) }));
+  const setInfest = (n, k, v) => setR((p) => ({ ...p, infestation: { ...p.infestation, [n]: { niveau: "Absent", tendance: "Stable", ...(p.infestation[n] || {}), [k]: v } } }));
+  const others = (history || []).filter((h) => h.id !== r.id);
   const reprise = () => {
-    if (!previous) return;
-    const eq = previous.equipements.map((e) => ({ ...e, id: uid(), activite: "RAS", consommation: "", action: "" }));
-    setR((p) => ({ ...p, equipements: eq }));
+    const src = (r.siteNom ? others.find((h) => h.siteNom === r.siteNom) : null) || others[0];
+    if (!src) return;
+    setR((p) => ({ ...p, equipements: (src.equipements || []).map((e) => ({ ...e, id: uid(), consommation: "0", etat: "RAS", action: "" })), produits: (src.produits || []).map((x) => ({ ...x, id: uid() })) }));
   };
   const onPhoto = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     setUploading(true);
-    try {
-      const added = [];
-      for (const f of files) added.push(await uploadPhoto(f, r.id));
-      setR((p) => ({ ...p, photos: [...(p.photos || []), ...added] }));
-    } catch (err) { alert("Envoi de la photo impossible. Vérifie que le bucket « ipm-photos » existe dans Supabase, ou ta connexion."); }
+    try { const added = []; for (const f of files) added.push(await uploadPhoto(f, r.id)); setR((p) => ({ ...p, photos: [...(p.photos || []), ...added] })); }
+    catch (err) { alert("Envoi de la photo impossible. Vérifie le bucket « ipm-photos » dans Supabase, ou ta connexion."); }
     finally { setUploading(false); e.target.value = ""; }
   };
   const removePhoto = (ph) => { deletePhoto(ph.path); setR((p) => ({ ...p, photos: p.photos.filter((x) => x.id !== ph.id) })); };
-  return (
-    <Modal open onClose={onClose} title="Rapport IPM"
-      footer={<><Button variant="ghost" onClick={onClose}>Annuler</Button><Button onClick={() => onSave(r)}>Enregistrer</Button></>}>
-      <Field label="Date du passage"><TextInput type="date" value={r.date} onChange={(e) => set("date", e.target.value)} /></Field>
+  const YesNo = ({ k }) => <Select value={r[k]} onChange={(e) => set(k, e.target.value)}><option>Oui</option><option>Non</option></Select>;
 
-      <div className="flex items-center justify-between" style={{ marginTop: 4 }}>
-        <span className="font-semibold" style={{ color: C.muted, fontSize: 13.5 }}>Équipements & relevés</span>
-        {previous && <Button variant="ghost" style={{ padding: "5px 9px", fontSize: 12.5 }} onClick={reprise}><RotateCcw size={13} /> Reprendre le dernier passage</Button>}
+  return (
+    <Modal open onClose={onClose} title="Rapport de passage IPM"
+      footer={<><Button variant="ghost" onClick={onClose}>Annuler</Button><Button onClick={() => onSave(r)}>Enregistrer</Button></>}>
+
+      <SubHead>Informations sur la visite</SubHead>
+      {client?.sites?.length > 0 && <Field label="Site concerné"><Select value={r.siteNom} onChange={(e) => set("siteNom", e.target.value)}><option value="">— Choisir le site —</option>{client.sites.map((st) => <option key={st} value={st}>{st}</option>)}</Select></Field>}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date du passage"><TextInput type="date" value={r.date} onChange={(e) => set("date", e.target.value)} /></Field>
+        <Field label="Type de visite"><Select value={r.typeVisite} onChange={(e) => set("typeVisite", e.target.value)}>{TYPE_VISITE.map((t) => <option key={t}>{t}</option>)}</Select></Field>
+        <Field label="Heure d'arrivée"><TextInput type="time" value={r.heureArrivee} onChange={(e) => set("heureArrivee", e.target.value)} /></Field>
+        <Field label="Heure de départ"><TextInput type="time" value={r.heureDepart} onChange={(e) => set("heureDepart", e.target.value)} /></Field>
+        <Field label="Technicien"><TextInput value={r.technicien} onChange={(e) => set("technicien", e.target.value)} /></Field>
+        <Field label="N° de rapport"><TextInput value={r.numRapport} onChange={(e) => set("numRapport", e.target.value)} /></Field>
       </div>
-      {r.equipements.length === 0 && <p style={{ color: C.muted, fontSize: 13 }}>Aucun équipement. {previous ? "Reprends le dernier passage ou a" : "A"}joute-en un.</p>}
+
+      <SubHead>Zones inspectées</SubHead>
+      <CheckGroup options={ZONES} value={r.zones} onChange={(v) => set("zones", v)} cols={2} />
+
+      <SubHead>Constat général</SubHead>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Activité détectée"><Select value={r.activiteDetectee} onChange={(e) => set("activiteDetectee", e.target.value)}><option>Non</option><option>Oui</option></Select></Field>
+        <Field label="Espèce(s)"><TextInput value={r.especes} onChange={(e) => set("especes", e.target.value)} /></Field>
+      </div>
+      <div><div style={{ fontSize: 13, fontWeight: 600, color: C.muted, marginBottom: 6 }}>Indices observés</div><CheckGroup options={INDICES} value={r.indices} onChange={(v) => set("indices", v)} cols={2} /></div>
+      <Field label="Description"><TextArea value={r.constat} onChange={(e) => set("constat", e.target.value)} /></Field>
+
+      <SubHead>Actions réalisées</SubHead>
+      <CheckGroup options={ACTIONS_VISITE} value={r.actions} onChange={(v) => set("actions", v)} cols={2} />
+
+      <div className="flex items-center justify-between" style={{ marginTop: 8 }}>
+        <SubHead>Relevé des postes & pièges</SubHead>
+        {others.length > 0 && <Button variant="ghost" style={{ padding: "5px 9px", fontSize: 12.5 }} onClick={reprise}><RotateCcw size={13} /> Reprendre le dernier passage</Button>}
+      </div>
+      {r.equipements.length === 0 && <p style={{ color: C.muted, fontSize: 13 }}>Aucun poste. {others.length > 0 ? "Reprends le dernier passage ou a" : "A"}joute-en un.</p>}
       <div className="flex flex-col gap-2">
         {r.equipements.map((e) => (
           <div key={e.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 11 }} className="flex flex-col gap-2">
             <div className="flex gap-2 items-start">
               <div style={{ flex: 1 }} className="grid grid-cols-2 gap-2">
-                <Select value={e.type} onChange={(ev) => setEquip(e.id, "type", ev.target.value)}>{IPM_EQUIP_TYPES.map((t) => <option key={t}>{t}</option>)}</Select>
-                <TextInput value={e.numero} onChange={(ev) => setEquip(e.id, "numero", ev.target.value)} placeholder="N°" />
+                <Select value={e.type} onChange={(ev) => setIn("equipements", e.id, "type", ev.target.value)}>{EQUIP_CODES.map((t) => <option key={t}>{t}</option>)}</Select>
+                <TextInput value={e.numero} onChange={(ev) => setIn("equipements", e.id, "numero", ev.target.value)} placeholder="N°" />
               </div>
-              <Button variant="danger" style={{ padding: "6px 8px" }} onClick={() => removeEquip(e.id)}><Trash2 size={14} /></Button>
+              <Button variant="danger" style={{ padding: "6px 8px" }} onClick={() => rmIn("equipements", e.id)}><Trash2 size={14} /></Button>
             </div>
-            <TextInput value={e.emplacement} onChange={(ev) => setEquip(e.id, "emplacement", ev.target.value)} placeholder="Emplacement" />
+            <TextInput value={e.emplacement} onChange={(ev) => setIn("equipements", e.id, "emplacement", ev.target.value)} placeholder="Emplacement" />
             <div className="grid grid-cols-3 gap-2">
-              <Select value={e.activite} onChange={(ev) => setEquip(e.id, "activite", ev.target.value)}>{ACTIVITES.map((a) => <option key={a}>{a}</option>)}</Select>
-              <TextInput value={e.consommation} onChange={(ev) => setEquip(e.id, "consommation", ev.target.value)} placeholder="Conso %" />
-              <TextInput value={e.action} onChange={(ev) => setEquip(e.id, "action", ev.target.value)} placeholder="Action" />
+              <Select value={e.consommation} onChange={(ev) => setIn("equipements", e.id, "consommation", ev.target.value)}>{CONSO.map((a) => <option key={a}>{a}</option>)}</Select>
+              <Select value={e.etat} onChange={(ev) => setIn("equipements", e.id, "etat", ev.target.value)}>{ETAT_POSTE.map((a) => <option key={a}>{a}</option>)}</Select>
+              <TextInput value={e.action} onChange={(ev) => setIn("equipements", e.id, "action", ev.target.value)} placeholder="Action" />
             </div>
           </div>
         ))}
       </div>
-      <Button variant="ghost" onClick={addEquip} style={{ alignSelf: "flex-start" }}><Plus size={15} /> Ajouter un équipement</Button>
+      <Button variant="ghost" onClick={() => addIn("equipements", blankEquip)} style={{ alignSelf: "flex-start" }}><Plus size={15} /> Ajouter un poste</Button>
 
-      <Field label="Observations"><TextArea value={r.observations} onChange={(e) => set("observations", e.target.value)} /></Field>
-      <Field label="Recommandations"><TextArea value={r.recommandations} onChange={(e) => set("recommandations", e.target.value)} /></Field>
-
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <span className="font-semibold" style={{ color: C.muted, fontSize: 13.5 }}>Photos</span>
-          <label>
-            <input type="file" accept="image/*" capture="environment" multiple onChange={onPhoto} style={{ display: "none" }} id={`ph-${r.id}`} />
-            <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`ph-${r.id}`).click()} disabled={uploading}>{uploading ? "Envoi…" : <><ImageIcon size={14} /> Ajouter</>}</Button>
-          </label>
-        </div>
-        {(r.photos || []).length === 0 ? <p style={{ color: C.muted, fontSize: 13 }}>Aucune photo jointe.</p> :
-          <div className="grid grid-cols-3 gap-2">{r.photos.map((ph) => (
-            <div key={ph.id} style={{ position: "relative" }}>
-              {urls[ph.path] ? <img src={urls[ph.path]} alt="" style={{ width: "100%", height: 84, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.line}` }} />
-                : <div style={{ width: "100%", height: 84, borderRadius: 8, border: `1px solid ${C.line}`, background: C.cream2, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: C.muted }}>…</div>}
-              <button onClick={() => removePhoto(ph)} style={{ position: "absolute", top: 3, right: 3, background: "#000A", border: "none", borderRadius: 6, color: "#fff", cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}><X size={13} /></button>
-            </div>))}
-          </div>}
+      <SubHead>Produits biocides utilisés</SubHead>
+      <div className="flex flex-col gap-2">
+        {r.produits.map((p) => (
+          <div key={p.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 11 }} className="flex flex-col gap-2">
+            <div className="flex gap-2 items-start">
+              <TextInput value={p.nom} onChange={(ev) => setIn("produits", p.id, "nom", ev.target.value)} placeholder="Nom commercial" />
+              <Button variant="danger" style={{ padding: "6px 8px" }} onClick={() => rmIn("produits", p.id)}><Trash2 size={14} /></Button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <TextInput value={p.substance} onChange={(ev) => setIn("produits", p.id, "substance", ev.target.value)} placeholder="Substance active" />
+              <TextInput value={p.autorisation} onChange={(ev) => setIn("produits", p.id, "autorisation", ev.target.value)} placeholder="N° autorisation BE" />
+              <TextInput value={p.quantite} onChange={(ev) => setIn("produits", p.id, "quantite", ev.target.value)} placeholder="Quantité" />
+              <TextInput value={p.zone} onChange={(ev) => setIn("produits", p.id, "zone", ev.target.value)} placeholder="Zone d'application" />
+            </div>
+          </div>
+        ))}
       </div>
+      <Button variant="ghost" onClick={() => addIn("produits", blankProduit)} style={{ alignSelf: "flex-start" }}><Plus size={15} /> Ajouter un produit</Button>
+
+      <SubHead>Niveau d'infestation</SubHead>
+      <div className="flex flex-col gap-1.5">
+        {NUISIBLES_INFEST.map((n) => (
+          <div key={n} className="flex items-center gap-2">
+            <span style={{ flex: 1, fontSize: 13, color: C.text }}>{n}</span>
+            <Select value={(r.infestation[n] || {}).niveau || "Absent"} onChange={(e) => setInfest(n, "niveau", e.target.value)} style={{ ...inputStyle, width: "auto" }}>{NIVEAUX_INFEST.map((x) => <option key={x}>{x}</option>)}</Select>
+            <Select value={(r.infestation[n] || {}).tendance || "Stable"} onChange={(e) => setInfest(n, "tendance", e.target.value)} style={{ ...inputStyle, width: "auto" }}>{TENDANCES.map((x) => <option key={x}>{x}</option>)}</Select>
+          </div>
+        ))}
+      </div>
+
+      <SubHead>Points critiques relevés</SubHead>
+      <CheckGroup options={POINTS_CRITIQUES} value={r.pointsCritiques} onChange={(v) => set("pointsCritiques", v)} cols={1} />
+      <Field label="Observations complémentaires"><TextArea value={r.observations} onChange={(e) => set("observations", e.target.value)} /></Field>
+
+      <SubHead>Recommandations</SubHead>
+      <div className="flex flex-col gap-2">
+        {r.recommandations.map((rc) => (
+          <div key={rc.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 11 }} className="flex flex-col gap-2">
+            <div className="flex gap-2 items-start">
+              <TextInput value={rc.texte} onChange={(ev) => setIn("recommandations", rc.id, "texte", ev.target.value)} placeholder="Recommandation / action corrective" />
+              <Button variant="danger" style={{ padding: "6px 8px" }} onClick={() => rmIn("recommandations", rc.id)}><Trash2 size={14} /></Button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <TextInput value={rc.responsable} onChange={(ev) => setIn("recommandations", rc.id, "responsable", ev.target.value)} placeholder="Responsable" />
+              <TextInput value={rc.echeance} onChange={(ev) => setIn("recommandations", rc.id, "echeance", ev.target.value)} placeholder="Échéance" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <Button variant="ghost" onClick={() => addIn("recommandations", blankReco)} style={{ alignSelf: "flex-start" }}><Plus size={15} /> Ajouter une recommandation</Button>
+      <Field label="Suivi des recommandations précédentes"><Select value={r.suiviPrecedent} onChange={(e) => set("suiviPrecedent", e.target.value)}>{["Toutes", "Partiellement", "Aucune", "Sans objet"].map((x) => <option key={x}>{x}</option>)}</Select></Field>
+
+      <SubHead>Synthèse & attestation</SubHead>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Situation sous contrôle"><YesNo k="sousControle" /></Field>
+        <Field label="Visite supplémentaire nécessaire"><YesNo k="visiteSupp" /></Field>
+        <Field label="Prochain passage prévu le"><TextInput type="date" value={r.prochainPassage} onChange={(e) => set("prochainPassage", e.target.value)} /></Field>
+      </div>
+      <Field label="Remarques du client"><TextArea value={r.remarquesClient} onChange={(e) => set("remarquesClient", e.target.value)} /></Field>
+
+      <SubHead>Photos</SubHead>
+      <div className="flex items-center justify-between">
+        <span style={{ fontSize: 13, color: C.muted }}>Jointes au rapport (privées)</span>
+        <label>
+          <input type="file" accept="image/*" capture="environment" multiple onChange={onPhoto} style={{ display: "none" }} id={`ph-${r.id}`} />
+          <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`ph-${r.id}`).click()} disabled={uploading}>{uploading ? "Envoi…" : <><ImageIcon size={14} /> Ajouter</>}</Button>
+        </label>
+      </div>
+      {(r.photos || []).length === 0 ? <p style={{ color: C.muted, fontSize: 13 }}>Aucune photo jointe.</p> :
+        <div className="grid grid-cols-3 gap-2">{r.photos.map((ph) => (
+          <div key={ph.id} style={{ position: "relative" }}>
+            {urls[ph.path] ? <img src={urls[ph.path]} alt="" style={{ width: "100%", height: 84, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.line}` }} />
+              : <div style={{ width: "100%", height: 84, borderRadius: 8, border: `1px solid ${C.line}`, background: C.cream2, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: C.muted }}>…</div>}
+            <button onClick={() => removePhoto(ph)} style={{ position: "absolute", top: 3, right: 3, background: "#000A", border: "none", borderRadius: 6, color: "#fff", cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}><X size={13} /></button>
+          </div>))}
+        </div>}
     </Modal>
   );
 }
