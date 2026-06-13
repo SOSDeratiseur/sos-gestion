@@ -391,7 +391,7 @@ function App() {
           <div style={{ padding: "22px 18px", maxWidth: 980, margin: "0 auto" }}>
             {!ready ? <p style={{ color: C.muted }}>Chargement…</p> : <>
               {view === "dashboard" && <Dashboard {...{ clients, inters, contrats, stations, clientName, setView, save, saveMany }} />}
-              {view === "inters" && <Interventions {...{ inters, clients, save, clientName, settings }} />}
+              {view === "inters" && <Interventions {...{ inters, clients, save, clientName, settings, ipm }} />}
               {view === "clients" && <Clients {...{ clients, save, inters, settings, contrats, ipm }} />}
               {view === "contrats" && <Contrats {...{ contrats, clients, save, clientName, inters, saveMany }} />}
               {view === "stations" && <Stations {...{ stations, clients, save }} />}
@@ -866,33 +866,54 @@ function CalendarView({ inters, clientName, onNew, onEdit }) {
 /* --------------------------------------------------------- INTERVENTIONS */
 const blankInter = () => ({ id: uid(), clientId: "", siteNom: "", date: today(), nuisible: NUISIBLES[0], type: "Curatif", statut: "Planifiée", produits: "", observations: "", suiviRequis: false, prochaineDate: "", haccp: [] });
 
-function Interventions({ inters, clients, save, clientName, settings }) {
+function Interventions({ inters, clients, save, clientName, settings, ipm }) {
   const [modal, setModal] = useState(null);
   const [q, setQ] = useState("");
   const [filt, setFilt] = useState("Tous");
   const [mode, setMode] = useState("liste");
   const [fiche, setFiche] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [flow, setFlow] = useState(null);
+  const [selClient, setSelClient] = useState("");
+  const [clientModal, setClientModal] = useState(null);
+  const [ipmEditing, setIpmEditing] = useState(null);
+
   const openFiche = async (it) => {
     setBusy(it.id);
-    try { const client = clients.find((c) => c.id === it.clientId); const url = await buildFiche(it, client, settings); setFiche({ url, filename: `fiche-${(client?.nom || "client").replace(/[^\w]+/g, "-").toLowerCase()}-${it.date}.pdf` }); }
+    try { const client = clients.find((c) => c.id === it.clientId); const url = await buildFiche(it, client, settings); setFiche({ url, filename: `fiche-${slug(client?.nom || "client")}-${it.date}.pdf`, title: "Fiche d'intervention" }); }
+    catch (e) { alert("Impossible de générer le PDF. Vérifie ta connexion internet."); }
+    finally { setBusy(null); }
+  };
+  const openIpmPdf = async (rep) => {
+    setBusy(rep.id);
+    try { const client = clients.find((c) => c.id === rep.clientId); const url = await buildIpmPdf(rep, client, settings, null); setFiche({ url, filename: `dossier-ipm-${slug(client?.nom || "client")}-${rep.date}.pdf`, title: "Dossier IPM" }); }
     catch (e) { alert("Impossible de générer le PDF. Vérifie ta connexion internet."); }
     finally { setBusy(null); }
   };
 
-  const list = inters
+  const interList = inters
     .filter((i) => filt === "Tous" || i.statut === filt)
     .filter((i) => !q || clientName(i.clientId).toLowerCase().includes(q.toLowerCase()) || i.nuisible.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .map((i) => ({ kind: "inter", ...i }));
+  const ipmList = (filt === "Tous" || filt === "IPM")
+    ? (ipm || []).filter((r) => !q || clientName(r.clientId).toLowerCase().includes(q.toLowerCase())).map((r) => ({ kind: "ipm", ...r }))
+    : [];
+  const rows = [...interList, ...ipmList].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
   const upsert = (it) => { const ex = inters.some((x) => x.id === it.id); save.inters(ex ? inters.map((x) => x.id === it.id ? it : x) : [...inters, it]); setModal(null); };
   const del = (id) => save.inters(inters.filter((x) => x.id !== id));
   const markDone = (it) => save.inters(inters.map((x) => x.id === it.id ? { ...x, statut: "Réalisée" } : x));
+  const saveIpm = (rep) => { const ex = (ipm || []).some((x) => x.id === rep.id); save.ipm(ex ? ipm.map((x) => x.id === rep.id ? rep : x) : [...(ipm || []), rep]); setIpmEditing(null); };
+  const delIpm = (id) => save.ipm((ipm || []).filter((x) => x.id !== id));
+
+  const startExisting = () => { if (selClient) { setIpmEditing({ rep: blankIpm(selClient), clientId: selClient }); setFlow(null); setSelClient(""); } };
+  const onNewClientSaved = (c) => { save.clients([...clients, c]); setClientModal(null); setIpmEditing({ rep: blankIpm(c.id), clientId: c.id }); };
+  const editClient = ipmEditing ? clients.find((c) => c.id === ipmEditing.clientId) : null;
+  const editHistory = ipmEditing ? (ipm || []).filter((r) => r.clientId === ipmEditing.clientId) : [];
 
   return (
     <>
-      <PageTitle action={<Button onClick={() => setModal(blankInter())} disabled={clients.length === 0}><Plus size={16} /> Nouvelle</Button>}>Interventions</PageTitle>
-      {clients.length === 0 && <Card style={{ marginBottom: 14 }}><p style={{ color: C.muted, fontSize: 14 }}>Crée d'abord un client dans l'onglet Clients.</p></Card>}
+      <PageTitle action={<Button onClick={() => setFlow("choose")}><Plus size={16} /> Nouveau</Button>}>Interventions</PageTitle>
       <div className="flex gap-2 mb-4">
         {["liste", "agenda"].map((m) => (
           <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: `1px solid ${mode === m ? C.gold : C.line}`, background: mode === m ? C.gold : "transparent", color: mode === m ? "#fff" : C.muted, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>{m === "liste" ? "Liste" : "Agenda"}</button>
@@ -906,12 +927,30 @@ function Interventions({ inters, clients, save, clientName, settings }) {
           <TextInput placeholder="Rechercher client ou nuisible…" value={q} onChange={(e) => setQ(e.target.value)} style={{ paddingLeft: 34 }} />
         </div>
         <Select value={filt} onChange={(e) => setFilt(e.target.value)} style={{ ...inputStyle, width: "auto" }}>
-          {["Tous", ...STATUTS].map((s) => <option key={s}>{s}</option>)}
+          {["Tous", ...STATUTS, "IPM"].map((s) => <option key={s}>{s}</option>)}
         </Select>
       </div>
 
-      {list.length === 0 ? <Empty icon={ClipboardList} title="Aucune intervention" hint="Planifie ta première intervention pour la voir apparaître ici." /> :
-        <div className="flex flex-col gap-2.5">{list.map((i) => (
+      {rows.length === 0 ? <Empty icon={ClipboardList} title="Rien à afficher" hint="Clique sur « Nouveau » pour créer un rapport IPM." /> :
+        <div className="flex flex-col gap-2.5">{rows.map((i) => i.kind === "ipm" ? (
+          <Card key={i.id} style={{ padding: 14 }}>
+            <div className="flex justify-between items-start gap-3">
+              <div style={{ minWidth: 0 }}>
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="font-bold" style={{ color: C.navy }}>{clientName(i.clientId)}</span>
+                  <Badge color={C.navy}>IPM</Badge>
+                </div>
+                <div style={{ fontSize: 13, color: C.muted }}>Rapport de passage{i.siteNom ? ` · ${i.siteNom}` : ""} · {(i.equipements || []).length} poste(s)</div>
+                <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3 }} className="flex items-center gap-1"><Calendar size={12} />{fmtDate(i.date)}</div>
+              </div>
+              <div className="flex gap-1.5 flex-shrink-0">
+                <Button variant="ghost" style={{ padding: "6px 9px" }} title="PDF dossier IPM" onClick={() => openIpmPdf(i)}>{busy === i.id ? <span style={{ fontSize: 12 }}>…</span> : <FileText size={15} />}</Button>
+                <Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => setIpmEditing({ rep: (ipm || []).find((x) => x.id === i.id) || i, clientId: i.clientId })}><Pencil size={15} /></Button>
+                <Button variant="danger" style={{ padding: "6px 9px" }} onClick={() => { if (confirm("Supprimer ce rapport IPM ?")) delIpm(i.id); }}><Trash2 size={15} /></Button>
+              </div>
+            </div>
+          </Card>
+        ) : (
           <Card key={i.id} style={{ padding: 14 }}>
             <div className="flex justify-between items-start gap-3">
               <div style={{ minWidth: 0 }}>
@@ -929,12 +968,26 @@ function Interventions({ inters, clients, save, clientName, settings }) {
                 <Button variant="danger" style={{ padding: "6px 9px" }} onClick={() => del(i.id)}><Trash2 size={15} /></Button>
               </div>
             </div>
-          </Card>))}
+          </Card>
+        ))}
         </div>}
       </>}
 
+      {flow === "choose" && <Modal open onClose={() => setFlow(null)} title="Nouveau rapport IPM"
+        footer={<Button variant="ghost" onClick={() => setFlow(null)}>Annuler</Button>}>
+        <p style={{ fontSize: 14, color: C.muted }}>Pour qui réalises-tu ce rapport ?</p>
+        <Button variant="dark" onClick={() => setFlow("existing")} disabled={clients.length === 0} style={{ justifyContent: "center" }}><Users size={16} /> Client existant</Button>
+        <Button onClick={() => { setFlow(null); setClientModal(blankClient()); }} style={{ justifyContent: "center" }}><Plus size={16} /> Nouveau client</Button>
+      </Modal>}
+      {flow === "existing" && <Modal open onClose={() => setFlow(null)} title="Choisir le client"
+        footer={<><Button variant="ghost" onClick={() => setFlow("choose")}>Retour</Button><Button onClick={startExisting} disabled={!selClient}>Continuer</Button></>}>
+        <Field label="Client"><Select value={selClient} onChange={(e) => setSelClient(e.target.value)}><option value="">— Choisir —</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select></Field>
+      </Modal>}
+
+      {clientModal && <ClientModal cl={clientModal} onClose={() => setClientModal(null)} onSave={onNewClientSaved} />}
+      {ipmEditing && <IPMEditor report={ipmEditing.rep} client={editClient} history={editHistory} onClose={() => setIpmEditing(null)} onSave={saveIpm} />}
       {modal && <InterModal it={modal} clients={clients} onClose={() => setModal(null)} onSave={upsert} />}
-      {fiche && <FicheModal url={fiche.url} filename={fiche.filename} title="Fiche d'intervention" onClose={() => setFiche(null)} />}
+      {fiche && <FicheModal url={fiche.url} filename={fiche.filename} title={fiche.title || "Fiche d'intervention"} onClose={() => setFiche(null)} />}
     </>
   );
 }
@@ -1004,7 +1057,7 @@ function Clients({ clients, save, inters, settings, contrats, ipm }) {
           </Card>))}
         </div>}
       {modal && <ClientModal cl={modal} onClose={() => setModal(null)} onSave={upsert} />}
-      {detail && <ClientDetail client={detail} inters={inters} contrats={contrats} settings={settings} ipm={ipm} saveIpm={save.ipm} onClose={() => setDetail(null)} onDoc={setDoc} />}
+      {detail && <ClientDetail client={detail} inters={inters} contrats={contrats} settings={settings} ipm={ipm} saveIpm={save.ipm} saveInters={save.inters} onClose={() => setDetail(null)} onDoc={setDoc} />}
       {doc && <FicheModal url={doc.url} filename={doc.filename} title={doc.title} onClose={() => setDoc(null)} />}
     </>
   );
@@ -1037,10 +1090,11 @@ function ClientModal({ cl, onClose, onSave }) {
   );
 }
 
-function ClientDetail({ client, inters, contrats, settings, ipm, saveIpm, onClose, onDoc }) {
+function ClientDetail({ client, inters, contrats, settings, ipm, saveIpm, saveInters, onClose, onDoc }) {
   const [busy, setBusy] = useState(null);
   const [ipmEditing, setIpmEditing] = useState(null);
   const list = inters.filter((i) => i.clientId === client.id).sort((a, b) => b.date.localeCompare(a.date));
+  const delInter = (id) => { if (confirm("Supprimer cette intervention ?")) saveInters(inters.filter((x) => x.id !== id)); };
   const contrat = contrats?.find((c) => c.clientId === client.id && c.actif);
   const myIpm = (ipm || []).filter((r) => r.clientId === client.id).sort((a, b) => b.date.localeCompare(a.date));
   const genFiche = async (it) => {
@@ -1099,7 +1153,10 @@ function ClientDetail({ client, inters, contrats, settings, ipm, saveIpm, onClos
           <div className="flex flex-col gap-2">{list.map((i) => (
             <div key={i.id} className="flex justify-between items-center gap-2" style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "9px 11px" }}>
               <div><div className="font-semibold" style={{ color: C.text, fontSize: 13.5 }}>{i.nuisible}</div><div style={{ fontSize: 12, color: C.muted }}>{fmtDate(i.date)} · {i.type} · {i.statut}</div></div>
-              <Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => genFiche(i)}>{busy === i.id ? <span style={{ fontSize: 12 }}>…</span> : <><FileText size={14} /> Fiche</>}</Button>
+              <div className="flex gap-1.5">
+                <Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => genFiche(i)}>{busy === i.id ? <span style={{ fontSize: 12 }}>…</span> : <><FileText size={14} /> Fiche</>}</Button>
+                <Button variant="danger" style={{ padding: "6px 9px" }} onClick={() => delInter(i.id)}><Trash2 size={14} /></Button>
+              </div>
             </div>))}
           </div>}
       </div>
