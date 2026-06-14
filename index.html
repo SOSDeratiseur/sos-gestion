@@ -30,10 +30,10 @@ import {
   LayoutDashboard, ClipboardList, Users, FileText, Activity, Database,
   Plus, Search, X, Check, Trash2, Pencil, Phone, Mail, MapPin, Calendar,
   AlertTriangle, CheckCircle2, Clock, Download, Upload, RotateCcw, Bug,
-  Settings as SettingsIcon, Image as ImageIcon, FolderOpen, ShieldCheck, LogOut,
+  Settings as SettingsIcon, Image as ImageIcon, FolderOpen, ShieldCheck, LogOut, Camera,
 } from "lucide-react";
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer,
 } from "recharts";
 import { createClient } from "@supabase/supabase-js";
@@ -350,7 +350,7 @@ function App() {
     { id: "inters", label: "Interventions", icon: ClipboardList },
     { id: "clients", label: "Clients", icon: Users },
     { id: "contrats", label: "Contrats", icon: FileText },
-    { id: "stations", label: "Suivi GIN", icon: Activity },
+    { id: "stations", label: "Tendances", icon: Activity },
     { id: "data", label: "Réglages", icon: SettingsIcon },
   ];
 
@@ -394,7 +394,7 @@ function App() {
               {view === "inters" && <Interventions {...{ inters, clients, save, clientName, settings, ipm }} />}
               {view === "clients" && <Clients {...{ clients, save, inters, settings, contrats, ipm }} />}
               {view === "contrats" && <Contrats {...{ contrats, clients, save, clientName, inters, saveMany }} />}
-              {view === "stations" && <Stations {...{ stations, clients, save }} />}
+              {view === "stations" && <Tendances {...{ ipm, clients }} />}
               {view === "data" && <><CompanySettings settings={settings} onSave={saveSettings} /><DataModule {...{ clients, inters, contrats, stations, save }} /></>}
             </>}
           </div>
@@ -935,7 +935,7 @@ function Interventions({ inters, clients, save, clientName, settings, ipm }) {
         <div className="flex flex-col gap-2.5">{rows.map((i) => i.kind === "ipm" ? (
           <Card key={i.id} style={{ padding: 14 }}>
             <div className="flex justify-between items-start gap-3">
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, cursor: "pointer" }} onClick={() => setIpmEditing({ rep: (ipm || []).find((x) => x.id === i.id) || i, clientId: i.clientId })}>
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className="font-bold" style={{ color: C.navy }}>{clientName(i.clientId)}</span>
                   <Badge color={C.navy}>IPM</Badge>
@@ -953,7 +953,7 @@ function Interventions({ inters, clients, save, clientName, settings, ipm }) {
         ) : (
           <Card key={i.id} style={{ padding: 14 }}>
             <div className="flex justify-between items-start gap-3">
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, cursor: "pointer" }} onClick={() => setModal(i)}>
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className="font-bold" style={{ color: C.navy }}>{clientName(i.clientId)}</span>
                   <Badge color={statutColor(i.statut)}>{i.statut}</Badge>
@@ -1317,12 +1317,14 @@ function IPMEditor({ report, client, history, onClose, onSave }) {
       <Field label="Remarques du client"><TextArea value={r.remarquesClient} onChange={(e) => set("remarquesClient", e.target.value)} /></Field>
 
       <SubHead>Photos</SubHead>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <span style={{ fontSize: 13, color: C.muted }}>Jointes au rapport (privées)</span>
-        <label>
-          <input type="file" accept="image/*" capture="environment" multiple onChange={onPhoto} style={{ display: "none" }} id={`ph-${r.id}`} />
-          <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`ph-${r.id}`).click()} disabled={uploading}>{uploading ? "Envoi…" : <><ImageIcon size={14} /> Ajouter</>}</Button>
-        </label>
+        <div className="flex gap-2">
+          <input type="file" accept="image/*" capture="environment" onChange={onPhoto} style={{ display: "none" }} id={`cam-${r.id}`} />
+          <input type="file" accept="image/*" multiple onChange={onPhoto} style={{ display: "none" }} id={`gal-${r.id}`} />
+          <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`cam-${r.id}`).click()} disabled={uploading}><Camera size={14} /> Photo</Button>
+          <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`gal-${r.id}`).click()} disabled={uploading}>{uploading ? "Envoi…" : <><ImageIcon size={14} /> Galerie / fichier</>}</Button>
+        </div>
       </div>
       {(r.photos || []).length === 0 ? <p style={{ color: C.muted, fontSize: 13 }}>Aucune photo jointe.</p> :
         <div className="grid grid-cols-3 gap-2">{r.photos.map((ph) => (
@@ -1411,6 +1413,57 @@ function ContratModal({ ct, clients, onClose, onSave }) {
 
 /* ----------------------------------------------------- STATIONS / GIN */
 const blankStation = () => ({ id: uid(), clientId: "", siteNom: "", numero: "", type: STATION_TYPES[0], emplacement: "", releves: [] });
+
+function Tendances({ ipm, clients }) {
+  const withReports = clients.filter((c) => (ipm || []).some((r) => r.clientId === c.id));
+  const [clientId, setClientId] = useState(withReports[0]?.id || "");
+  const [site, setSite] = useState("");
+  const sites = [...new Set((ipm || []).filter((r) => r.clientId === clientId && r.siteNom).map((r) => r.siteNom))];
+  const reps = (ipm || []).filter((r) => r.clientId === clientId && (!site || r.siteNom === site)).sort((a, b) => a.date.localeCompare(b.date));
+  const data = reps.map((r) => {
+    const infEntries = NUISIBLES_INFEST.map((n) => (r.infestation || {})[n]).filter((x) => x && x.niveau);
+    const inf = infEntries.length ? infEntries.reduce((s, x) => s + NIVEAUX_INFEST.indexOf(x.niveau), 0) / infEntries.length : null;
+    const eqv = (r.equipements || []).map((e) => CONSO.indexOf(e.consommation)).filter((v) => v >= 0);
+    const conso = eqv.length ? eqv.reduce((s, v) => s + v, 0) / eqv.length : null;
+    return { date: fmtDate(r.date).slice(0, 6), infestation: inf != null ? +inf.toFixed(2) : null, conso: conso != null ? +conso.toFixed(2) : null };
+  });
+
+  return (
+    <>
+      <PageTitle>Tendances d'activité</PageTitle>
+      <p style={{ color: C.muted, fontSize: 13, marginTop: -12, marginBottom: 16 }}>Évolution de la pression nuisible, calculée automatiquement à partir de tes rapports IPM.</p>
+
+      {withReports.length === 0 ? <Empty icon={Activity} title="Aucune donnée" hint="Crée des rapports IPM (avec niveaux d'infestation ou relevés de consommation) pour voir les tendances ici." /> : <>
+        <div className="flex gap-2 mb-4 flex-wrap">
+          <Select value={clientId} onChange={(e) => { setClientId(e.target.value); setSite(""); }} style={{ ...inputStyle, flex: 1, minWidth: 160 }}>
+            {withReports.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+          </Select>
+          {sites.length > 0 && <Select value={site} onChange={(e) => setSite(e.target.value)} style={{ ...inputStyle, width: "auto" }}>
+            <option value="">Tous les sites</option>{sites.map((s) => <option key={s} value={s}>{s}</option>)}
+          </Select>}
+        </div>
+
+        {reps.length < 2 ? <Card><p style={{ color: C.muted, fontSize: 14 }}>Il faut au moins 2 passages enregistrés pour ce client {site ? "et ce site " : ""}afin d'afficher une tendance.</p></Card> :
+          <Card>
+            <h3 className="font-bold mb-3" style={{ color: C.navy }}>Infestation & consommation des appâts</h3>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={data} margin={{ left: -6, right: 6 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.line} vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="inf" domain={[0, 3]} ticks={[0, 1, 2, 3]} tickFormatter={(v) => NIVEAUX_INFEST[v] || ""} tick={{ fill: C.muted, fontSize: 10 }} width={56} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="conso" orientation="right" domain={[0, 4]} ticks={[0, 1, 2, 3, 4]} tickFormatter={(v) => CONSO[v] || ""} tick={{ fill: C.muted, fontSize: 10 }} width={34} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v, n) => n === "Infestation" ? (NIVEAUX_INFEST[Math.round(v)] || v) : (CONSO[Math.round(v)] || v)} contentStyle={{ borderRadius: 10, border: `1px solid ${C.line}` }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Line yAxisId="inf" type="monotone" dataKey="infestation" name="Infestation" stroke={C.gold} strokeWidth={2.5} dot={{ fill: C.navy, r: 3 }} connectNulls />
+                <Line yAxisId="conso" type="monotone" dataKey="conso" name="Conso. appâts" stroke={C.navy} strokeWidth={2} strokeDasharray="4 3" dot={{ r: 2 }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+            <p style={{ fontSize: 11.5, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>Infestation : moyenne des niveaux relevés (Absent → Fort). Consommation : moyenne de la consommation des postes (0 → Totale). Une courbe qui monte = pression en hausse.</p>
+          </Card>}
+      </>}
+    </>
+  );
+}
 
 function Stations({ stations, clients, save }) {
   const [modal, setModal] = useState(null);
