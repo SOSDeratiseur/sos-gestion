@@ -1,0 +1,1658 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>SOS Gestion</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%231A1F2E%22/><text y=%2270%22 x=%2250%22 font-size=%2260%22 text-anchor=%22middle%22 fill=%22%23B5863A%22>SD</text></svg>" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react/": "https://esm.sh/react@18.3.1/",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom",
+    "lucide-react": "https://esm.sh/lucide-react@0.408.0?external=react",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.4"
+  }
+}
+</script>
+<script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+<style>html,body{margin:0;padding:0;background:#F5F0E8}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  LayoutDashboard, ClipboardList, Users, FileText, Activity, Database,
+  Plus, Search, X, Check, Trash2, Pencil, Phone, Mail, MapPin, Calendar,
+  AlertTriangle, CheckCircle2, Clock, Download, Upload, RotateCcw, Bug,
+  Settings as SettingsIcon, Image as ImageIcon, FolderOpen, ShieldCheck, LogOut, Camera,
+} from "lucide-react";
+import {
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer,
+} from "recharts";
+import { createClient } from "@supabase/supabase-js";
+import { createRoot } from "react-dom/client";
+
+/* ---------------------------------------------------------------- palette */
+const C = {
+  navy: "#1A1F2E", navy2: "#252C40", cream: "#F5F0E8", cream2: "#EFE8DB",
+  gold: "#B5863A", goldL: "#D4A85A", text: "#262A36", muted: "#6E7280",
+  green: "#3E8E5A", amber: "#C08A26", red: "#B4452F", line: "#E2DACB",
+  surface: "#FBF8F2",
+};
+
+/* ------------------------------------------------------------- constants */
+const NUISIBLES = ["Rats / Souris","Cafards / Blattes","Punaises de lit","Fourmis","Fourmis charpentières","Guêpes / Frelons","Mites alimentaires","Puces","Poissons d'argent","Mouches","Autre"];
+const CLIENT_TYPES = ["Particulier","HORECA","Syndic / Copropriété","Logistique","Maison de repos","Agroalimentaire","Commerce","Autre"];
+const INTER_TYPES = ["Curatif","Préventif","Diagnostic","Contrôle"];
+const STATUTS = ["Planifiée","Réalisée","Annulée"];
+const NIVEAUX = ["Essentiel","Confort","Premium"];
+const FREQUENCES = ["Mensuel","Bimestriel","Trimestriel","Semestriel","Annuel"];
+const STATION_TYPES = ["Poste d'appâtage sécurisé","Piège mécanique","Détecteur","Piège lumineux"];
+const IPM_EQUIP_TYPES = ["Poste d'appâtage sécurisé","Piège mécanique","DEIV (destructeur d'insectes volants)","Plaque / tube de glu","Détecteur connecté","Station extérieure","Piège à phéromones","Autre"];
+const TYPE_VISITE = ["Visite contractuelle","Visite de contrôle","Intervention curative","Urgence","Suivi"];
+const ZONES = ["Cuisine / production","Stockage sec","Chambres froides","Zone déchets / poubelles","Salle / accueil","Sanitaires","Cave / sous-sol","Grenier / combles","Extérieur / périmètre","Local technique","Quai de livraison"];
+const INDICES = ["Excréments","Traces de passage","Dégâts matériels","Bruits signalés","Captures"];
+const ACTIONS_VISITE = ["Contrôle des postes d'appâtage","Recharge / remplacement des appâts","Pose de nouveaux postes","Retrait de postes","Application insecticide","Pose / relevé de pièges","Nettoyage des postes","Conseil hygiène au client"];
+const POINTS_CRITIQUES = ["Trous / passages dans murs ou plinthes","Portes non étanches (bas de porte)","Déchets / poubelles mal gérés","Denrées stockées au sol","Végétation / encombrement périmètre","Points d'eau accessibles","Égouts / avaloirs non protégés","Zones difficiles d'accès"];
+const NUISIBLES_INFEST = ["Rats","Souris","Blattes / cafards","Fourmis","Mites alimentaires","Mouches / moucherons","Punaises de lit"];
+const NIVEAUX_INFEST = ["Absent","Faible","Moyen","Fort"];
+const TENDANCES = ["Stable","Hausse","Baisse"];
+const CONSO = ["0","¼","½","¾","Totale"];
+const ETAT_POSTE = ["RAS","Consommation","Poste dégradé","Inaccessible","Remplacé","Nouveau"];
+const EQUIP_CODES = ["RI - rodonticide intérieur","RE - rodonticide extérieur","MC - piège mécanique","G - glu","DEIV - détecteur insectes","PH - piège phéromone"];
+const ACTIVITES = ["RAS","Traces","Activité faible","Activité forte","Capture"];
+const HACCP = ["Local accessible et propre","Postes d'appâtage intègres","Aucune denrée exposée à proximité","Traçabilité produits à jour","Recommandations remises au client"];
+
+/* ----------------------------------------------------- cloud (Supabase) */
+const SUPABASE_URL = "https://cqyzbwdwtpzlvmgkdvja.supabase.co";
+const SUPABASE_KEY = "sb_publishable_TTGCPfObCVDB8GMpoI3T-w_e6s9f9M9";
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const CACHE_KEY = "sosg_cache_v1";
+const emptyDoc = () => ({ clients: [], inters: [], contrats: [], stations: [], ipm: [], settings: defaultSettings });
+
+/* ----------------------------------------------------------------- utils */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const fmtDate = (s) => s ? new Date(s + "T00:00:00").toLocaleDateString("fr-BE", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+const today = () => new Date().toISOString().slice(0, 10);
+const eur = (n) => (Number(n) || 0).toLocaleString("fr-BE", { style: "currency", currency: "EUR" });
+const slug = (s) => (s || "client").replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
+const FREQ_MONTHS = { Mensuel: 1, Bimestriel: 2, Trimestriel: 3, Semestriel: 6, Annuel: 12 };
+const nextFromFreq = (dateDebut, freq) => {
+  const m = FREQ_MONTHS[freq] || 3;
+  const now = new Date(today() + "T00:00:00");
+  let d = new Date((dateDebut || today()) + "T00:00:00");
+  if (isNaN(d)) d = new Date(now);
+  while (d <= now) d.setMonth(d.getMonth() + m);
+  return d.toISOString().slice(0, 10);
+};
+const dateColor = (d) => { if (!d) return "#6E7280"; const diff = (new Date(d + "T00:00:00") - new Date(today() + "T00:00:00")) / 86400000; return diff < 0 ? "#B4452F" : diff <= 14 ? "#C08A26" : "#3E8E5A"; };
+const doPassage = (contrat, contrats) => {
+  const ni = { ...blankInter(), clientId: contrat.clientId, date: today(), type: "Préventif", statut: "Réalisée" };
+  const nc = contrats.map((c) => c.id === contrat.id ? { ...c, prochainPassage: nextFromFreq(today(), c.frequence) } : c);
+  return { ni, nc };
+};
+
+const defaultSettings = {
+  nom: "SOS Dératiseur", accroche: "GESTION · PCO", gerant: "", tva: "BE0687.940.529",
+  telephone: "0470 77 34 12", email: "info@sosderatiseur.be", siteweb: "sosderatiseur.com",
+  adresse: "Rue de la Cayauderie 58, 6000 Charleroi", zone: "Interventions en Wallonie", logo: "",
+};
+
+function fileToLogo(file, cb) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 240, scale = Math.min(1, max / Math.max(img.width, img.height));
+      const cw = Math.round(img.width * scale), ch = Math.round(img.height * scale);
+      const cv = document.createElement("canvas"); cv.width = cw; cv.height = ch;
+      cv.getContext("2d").drawImage(img, 0, 0, cw, ch);
+      cb(cv.toDataURL("image/png"));
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ----------------------------------------------------------- IPM + photos */
+const blankEquip = () => ({ id: uid(), type: EQUIP_CODES[0], numero: "", emplacement: "", consommation: "0", etat: "RAS", action: "" });
+const blankReco = () => ({ id: uid(), texte: "", responsable: "", echeance: "" });
+const blankProduit = () => ({ id: uid(), nom: "", substance: "", autorisation: "", quantite: "", zone: "" });
+const blankIpm = (clientId) => ({
+  id: uid(), clientId, date: today(), siteNom: "",
+  heureArrivee: "", heureDepart: "", technicien: "", numRapport: "",
+  typeVisite: "Visite contractuelle",
+  zones: [], activiteDetectee: "Non", especes: "", indices: [], constat: "",
+  actions: [], equipements: [], produits: [], infestation: {}, pointsCritiques: [],
+  observations: "", recommandations: [], suiviPrecedent: "Sans objet",
+  sousControle: "Oui", visiteSupp: "Non", prochainPassage: "", remarquesClient: "", photos: [],
+});
+
+function compressImage(file) {
+  return new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 1280, scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+        cv.getContext("2d").drawImage(img, 0, 0, w, h);
+        cv.toBlob((b) => b ? res(b) : rej(new Error("compress")), "image/jpeg", 0.7);
+      };
+      img.onerror = rej; img.src = reader.result;
+    };
+    reader.onerror = rej; reader.readAsDataURL(file);
+  });
+}
+
+async function uploadPhoto(file, reportId) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const uidPart = session?.user?.id || "anon";
+  const path = `${uidPart}/${reportId}/${uid()}.jpg`;
+  const blob = await compressImage(file);
+  const { error } = await supabase.storage.from("ipm-photos").upload(path, blob, { contentType: "image/jpeg", upsert: false });
+  if (error) throw error;
+  return { id: uid(), path };
+}
+async function signedUrls(paths) {
+  if (!paths.length) return {};
+  try {
+    const { data } = await supabase.storage.from("ipm-photos").createSignedUrls(paths, 3600);
+    const out = {};
+    (data || []).forEach((d) => { if (d.signedUrl) out[d.path] = d.signedUrl; });
+    return out;
+  } catch (e) { return {}; }
+}
+async function deletePhoto(path) { try { await supabase.storage.from("ipm-photos").remove([path]); } catch (e) { console.error(e); } }
+
+/* ----------------------------------------------------------- UI atoms */
+function Badge({ color, children }) {
+  return <span style={{ background: color + "22", color, border: `1px solid ${color}55` }} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold">{children}</span>;
+}
+const statutColor = (s) => s === "Réalisée" ? C.green : s === "Annulée" ? C.red : C.gold;
+
+function Field({ label, children }) {
+  return <label className="flex flex-col gap-1 text-sm"><span className="font-semibold" style={{ color: C.muted }}>{label}</span>{children}</label>;
+}
+const inputStyle = { background: "#fff", border: `1px solid ${C.line}`, color: C.text, borderRadius: 10, padding: "9px 11px", fontSize: 14, width: "100%", outline: "none" };
+const TextInput = (p) => <input {...p} style={{ ...inputStyle, ...(p.style || {}) }} />;
+const Select = ({ children, ...p }) => <select {...p} style={inputStyle}>{children}</select>;
+const TextArea = (p) => <textarea {...p} style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} />;
+function CheckGroup({ options, value, onChange, cols = 1 }) {
+  const v = value || [];
+  const toggle = (o) => onChange(v.includes(o) ? v.filter((x) => x !== o) : [...v, o]);
+  return (
+    <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${cols},1fr)` }}>
+      {options.map((o) => (
+        <label key={o} className="flex items-center gap-2" style={{ color: C.text, fontSize: 13 }}>
+          <input type="checkbox" checked={v.includes(o)} onChange={() => toggle(o)} /> {o}
+        </label>
+      ))}
+    </div>
+  );
+}
+function SubHead({ children }) {
+  return <div style={{ fontWeight: 700, color: C.navy, fontSize: 14, marginTop: 6, paddingTop: 10, borderTop: `1px solid ${C.line}` }}>{children}</div>;
+}
+
+function Button({ variant = "primary", children, ...p }) {
+  const styles = {
+    primary: { background: C.gold, color: "#fff" },
+    dark: { background: C.navy, color: C.cream },
+    ghost: { background: "transparent", color: C.navy, border: `1px solid ${C.line}` },
+    danger: { background: "transparent", color: C.red, border: `1px solid ${C.red}55` },
+  }[variant];
+  const dis = !!p.disabled;
+  return <button {...p} style={{ ...styles, borderRadius: 10, padding: "9px 14px", fontWeight: 600, fontSize: 14, cursor: dis ? "not-allowed" : "pointer", opacity: dis ? 0.45 : 1, display: "inline-flex", alignItems: "center", gap: 6, ...(p.style || {}) }}>{children}</button>;
+}
+
+function Modal({ open, onClose, title, children, footer }) {
+  if (!open) return null;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#0008", zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center" }} className="md:items-center p-0 md:p-4">
+      <div onClick={(e) => e.stopPropagation()} style={{ background: C.surface, width: "100%", maxWidth: 560, maxHeight: "92vh", borderRadius: 18, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px #0006" }}>
+        <div style={{ background: C.navy, color: C.cream, padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 className="font-bold" style={{ fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{title}</h3>
+          <X size={20} style={{ cursor: "pointer" }} onClick={onClose} />
+        </div>
+        <div style={{ padding: 18, overflowY: "auto" }} className="flex flex-col gap-3">{children}</div>
+        {footer && <div style={{ padding: 14, borderTop: `1px solid ${C.line}`, display: "flex", gap: 8, justifyContent: "flex-end" }}>{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+function Empty({ icon: Icon, title, hint }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center" style={{ padding: "48px 20px", color: C.muted }}>
+      <div style={{ background: C.cream2, borderRadius: 16, padding: 16, marginBottom: 12 }}><Icon size={28} color={C.gold} /></div>
+      <p className="font-semibold" style={{ color: C.text }}>{title}</p>
+      <p className="text-sm" style={{ maxWidth: 280 }}>{hint}</p>
+    </div>
+  );
+}
+
+/* ===================================================================== APP */
+function Login() {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!email || !pw) { setMsg("Renseigne ton e-mail et ton mot de passe."); return; }
+    setBusy(true); setMsg("");
+    try {
+      if (mode === "login") {
+        const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
+        if (error) setMsg(error.message);
+      } else {
+        const { data, error } = await supabase.auth.signUp({ email, password: pw });
+        if (error) setMsg(error.message);
+        else if (!data.session) setMsg("Compte créé. Vérifie tes e-mails pour confirmer, puis connecte-toi.");
+      }
+    } catch (e) { setMsg("Erreur de connexion. Réessaie."); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div style={{ background: C.cream, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 18, fontFamily: "'Inter',sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap');*{box-sizing:border-box}`}</style>
+      <div style={{ width: "100%", maxWidth: 380, background: C.surface, borderRadius: 18, overflow: "hidden", boxShadow: "0 20px 60px #0002", border: `1px solid ${C.line}` }}>
+        <div style={{ background: C.navy, padding: "22px 22px" }}><Brand settings={{ nom: "SOS Gestion", accroche: "DÉRATISEUR · PCO" }} /></div>
+        <div style={{ padding: 22 }} className="flex flex-col gap-3">
+          <h2 style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 800, color: C.navy, fontSize: 19 }}>{mode === "login" ? "Connexion" : "Créer un compte"}</h2>
+          <Field label="E-mail"><TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="toi@exemple.be" /></Field>
+          <Field label="Mot de passe"><TextInput type="password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="••••••••" /></Field>
+          <Button onClick={submit} disabled={busy} style={{ justifyContent: "center", marginTop: 4 }}>{busy ? "Patiente…" : mode === "login" ? "Se connecter" : "Créer le compte"}</Button>
+          {msg && <p style={{ fontSize: 12.5, color: C.red, lineHeight: 1.4 }}>{msg}</p>}
+          <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setMsg(""); }} style={{ background: "none", border: "none", color: C.gold, fontWeight: 600, fontSize: 13, cursor: "pointer", marginTop: 2 }}>
+            {mode === "login" ? "Pas encore de compte ? En créer un" : "Déjà un compte ? Se connecter"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [view, setView] = useState("dashboard");
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [clients, setClients] = useState([]);
+  const [inters, setInters] = useState([]);
+  const [contrats, setContrats] = useState([]);
+  const [stations, setStations] = useState([]);
+  const [ipm, setIpm] = useState([]);
+  const [settings, setSettings] = useState(defaultSettings);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthReady(true); });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session) { setReady(false); return; }
+    (async () => {
+      let doc = null;
+      try {
+        const { data, error } = await supabase.from("app_state").select("data").eq("user_id", session.user.id).maybeSingle();
+        if (!error && data) doc = data.data;
+      } catch (e) { console.error(e); }
+      if (!doc) { try { const c = localStorage.getItem(CACHE_KEY); if (c) doc = JSON.parse(c); } catch (e) {} }
+      doc = { ...emptyDoc(), ...(doc || {}) };
+      setClients(doc.clients || []);
+      setInters(doc.inters || []);
+      setContrats(doc.contrats || []);
+      setStations(doc.stations || []);
+      setIpm(doc.ipm || []);
+      setSettings({ ...defaultSettings, ...(doc.settings || {}) });
+      setReady(true);
+    })();
+  }, [session]);
+
+  const writeAll = (next) => {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(next)); } catch (e) {}
+    if (session) supabase.from("app_state").upsert({ user_id: session.user.id, data: next, updated_at: new Date().toISOString() }).then(({ error }) => { if (error) console.error("sync", error); });
+  };
+
+  const save = {
+    clients: (v) => { setClients(v); writeAll({ clients: v, inters, contrats, stations, ipm, settings }); },
+    inters: (v) => { setInters(v); writeAll({ clients, inters: v, contrats, stations, ipm, settings }); },
+    contrats: (v) => { setContrats(v); writeAll({ clients, inters, contrats: v, stations, ipm, settings }); },
+    stations: (v) => { setStations(v); writeAll({ clients, inters, contrats, stations: v, ipm, settings }); },
+    ipm: (v) => { setIpm(v); writeAll({ clients, inters, contrats, stations, ipm: v, settings }); },
+  };
+  const saveSettings = (v) => { setSettings(v); writeAll({ clients, inters, contrats, stations, ipm, settings: v }); };
+  const saveMany = (partial) => {
+    if (partial.clients) setClients(partial.clients);
+    if (partial.inters) setInters(partial.inters);
+    if (partial.contrats) setContrats(partial.contrats);
+    if (partial.stations) setStations(partial.stations);
+    if (partial.ipm) setIpm(partial.ipm);
+    if (partial.settings) setSettings(partial.settings);
+    writeAll({ clients, inters, contrats, stations, ipm, settings, ...partial });
+  };
+
+  const clientName = (id) => clients.find((c) => c.id === id)?.nom || "Client supprimé";
+
+  const nav = [
+    { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
+    { id: "inters", label: "Interventions", icon: ClipboardList },
+    { id: "clients", label: "Clients", icon: Users },
+    { id: "contrats", label: "Contrats", icon: FileText },
+    { id: "stations", label: "Tendances", icon: Activity },
+    { id: "data", label: "Réglages", icon: SettingsIcon },
+  ];
+
+  if (!authReady) return <div style={{ background: C.cream, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.muted, fontFamily: "'Inter',sans-serif" }}>Chargement…</div>;
+  if (!session) return <Login />;
+
+  return (
+    <div style={{ background: C.cream, minHeight: "100vh", color: C.text, fontFamily: "'Inter',sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap');
+        *{box-sizing:border-box} ::-webkit-scrollbar{width:8px;height:8px} ::-webkit-scrollbar-thumb{background:${C.line};border-radius:8px}
+        @media(max-width:767px){.desktop-only{display:none!important}} @media(min-width:768px){.mobile-only{display:none!important}}`}</style>
+
+      <div className="md:flex" style={{ minHeight: "100vh" }}>
+        {/* sidebar (desktop) */}
+        <aside className="desktop-only" style={{ width: 248, background: C.navy, padding: 20, position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
+          <Brand settings={settings} />
+          <nav className="flex flex-col gap-1 mt-7">
+            {nav.map((n) => {
+              const active = view === n.id;
+              return (
+                <button key={n.id} onClick={() => setView(n.id)} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 11, border: "none", cursor: "pointer", textAlign: "left", fontSize: 14, fontWeight: 600, background: active ? C.gold : "transparent", color: active ? "#fff" : "#A9AEBD" }}>
+                  <n.icon size={18} /> {n.label}
+                </button>
+              );
+            })}
+          </nav>
+          <div style={{ position: "absolute", bottom: 20, left: 20, right: 20 }}>
+            <button onClick={() => supabase.auth.signOut()} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "transparent", border: `1px solid #3A4156`, color: "#A9AEBD", borderRadius: 9, padding: "8px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}><LogOut size={15} /> Se déconnecter</button>
+            <div style={{ color: "#5B6172", fontSize: 11, lineHeight: 1.6, marginTop: 12 }}>
+              {settings.zone}<br />{settings.telephone}<br />{settings.email}{settings.tva ? <><br />TVA {settings.tva}</> : null}
+            </div>
+          </div>
+        </aside>
+
+        {/* main */}
+        <main className="flex-1" style={{ paddingBottom: 84 }}>
+          <header className="mobile-only" style={{ background: C.navy, padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><Brand settings={settings} /><button onClick={() => supabase.auth.signOut()} style={{ background: "transparent", border: "none", color: "#7B8094", cursor: "pointer" }}><LogOut size={20} /></button></header>
+          <div style={{ padding: "22px 18px", maxWidth: 980, margin: "0 auto" }}>
+            {!ready ? <p style={{ color: C.muted }}>Chargement…</p> : <>
+              {view === "dashboard" && <Dashboard {...{ clients, inters, contrats, stations, clientName, setView, save, saveMany }} />}
+              {view === "inters" && <Interventions {...{ inters, clients, save, clientName, settings, ipm }} />}
+              {view === "clients" && <Clients {...{ clients, save, inters, settings, contrats, ipm }} />}
+              {view === "contrats" && <Contrats {...{ contrats, clients, save, clientName, inters, saveMany }} />}
+              {view === "stations" && <Tendances {...{ ipm, clients }} />}
+              {view === "data" && <><CompanySettings settings={settings} onSave={saveSettings} /><DataModule {...{ clients, inters, contrats, stations, save }} /></>}
+            </>}
+          </div>
+        </main>
+      </div>
+
+      {/* bottom nav (mobile) */}
+      <nav className="mobile-only" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: C.navy, display: "flex", justifyContent: "space-around", padding: "8px 4px", zIndex: 30 }}>
+        {nav.map((n) => {
+          const active = view === n.id;
+          return (
+            <button key={n.id} onClick={() => setView(n.id)} style={{ background: "none", border: "none", color: active ? C.goldL : "#7B8094", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 9.5, fontWeight: 600, cursor: "pointer", flex: 1 }}>
+              <n.icon size={20} /> {n.label.split(" ")[0]}
+            </button>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}
+
+function Brand({ settings = {} }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div style={{ background: settings.logo ? "#fff" : C.gold, width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+        {settings.logo ? <img src={settings.logo} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <Bug size={22} color={C.navy} />}
+      </div>
+      <div style={{ lineHeight: 1.05 }}>
+        <div style={{ color: C.cream, fontWeight: 800, fontFamily: "'Plus Jakarta Sans',sans-serif", letterSpacing: 0.3 }}>{settings.nom || "SOS Gestion"}</div>
+        <div style={{ color: C.gold, fontSize: 10.5, fontWeight: 600, letterSpacing: 1.5 }}>{settings.accroche || "DÉRATISEUR · PCO"}</div>
+      </div>
+    </div>
+  );
+}
+
+function PageTitle({ children, action }) {
+  return (
+    <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+      <h1 style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontWeight: 800, fontSize: 24, color: C.navy }}>{children}</h1>
+      {action}
+    </div>
+  );
+}
+function Card({ children, style }) {
+  return <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, ...style }}>{children}</div>;
+}
+
+/* ----------------------------------------------------------- DASHBOARD */
+function Dashboard({ clients, inters, contrats, stations, clientName, setView, save, saveMany }) {
+  const now = today();
+  const [interModal, setInterModal] = useState(null);
+  const onPassage = (c) => {
+    const { ni, nc } = doPassage(c, contrats);
+    saveMany({ inters: [...inters, ni], contrats: nc });
+    setInterModal(ni);
+  };
+  const planned = inters.filter((i) => i.statut === "Planifiée");
+  const upcoming = [...planned].filter((i) => i.date >= now).sort((a, b) => a.date.localeCompare(b.date));
+  const thisMonth = inters.filter((i) => i.statut === "Réalisée" && i.date.slice(0, 7) === now.slice(0, 7)).length;
+  const activeContracts = contrats.filter((c) => c.actif).length;
+  const suivis = inters.filter((i) => i.suiviRequis && i.prochaineDate).sort((a, b) => a.prochaineDate.localeCompare(b.prochaineDate));
+  const rappels = contrats.filter((c) => c.actif).sort((a, b) => (a.prochainPassage || "9999").localeCompare(b.prochainPassage || "9999"));
+  const setRappel = (id, d) => save.contrats(contrats.map((x) => x.id === id ? { ...x, prochainPassage: d } : x));
+
+  const monthly = useMemo(() => {
+    const out = [];
+    for (let k = 5; k >= 0; k--) {
+      const d = new Date(); d.setMonth(d.getMonth() - k);
+      const key = d.toISOString().slice(0, 7);
+      out.push({ mois: d.toLocaleDateString("fr-BE", { month: "short" }), n: inters.filter((i) => i.statut === "Réalisée" && i.date.slice(0, 7) === key).length });
+    }
+    return out;
+  }, [inters]);
+
+  const kpis = [
+    { label: "Interventions à venir", val: upcoming.length, icon: Clock, color: C.gold },
+    { label: "Réalisées ce mois", val: thisMonth, icon: CheckCircle2, color: C.green },
+    { label: "Contrats actifs", val: activeContracts, icon: FileText, color: C.navy },
+    { label: "Suivis à programmer", val: suivis.length, icon: AlertTriangle, color: C.red },
+  ];
+
+  return (
+    <>
+      <PageTitle>Tableau de bord</PageTitle>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        {kpis.map((k) => (
+          <Card key={k.label}>
+            <div className="flex items-center justify-between mb-2"><k.icon size={18} color={k.color} /></div>
+            <div style={{ fontSize: 30, fontWeight: 800, fontFamily: "'Plus Jakarta Sans',sans-serif", color: C.navy }}>{k.val}</div>
+            <div style={{ fontSize: 12.5, color: C.muted, fontWeight: 600 }}>{k.label}</div>
+          </Card>
+        ))}
+      </div>
+
+      <Card style={{ marginBottom: 20 }}>
+        <h3 className="font-bold mb-3" style={{ color: C.navy }}>Interventions réalisées · 6 mois</h3>
+        <ResponsiveContainer width="100%" height={210}>
+          <BarChart data={monthly}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.line} vertical={false} />
+            <XAxis dataKey="mois" tick={{ fill: C.muted, fontSize: 12 }} axisLine={false} tickLine={false} />
+            <YAxis allowDecimals={false} tick={{ fill: C.muted, fontSize: 12 }} axisLine={false} tickLine={false} />
+            <Tooltip contentStyle={{ borderRadius: 10, border: `1px solid ${C.line}` }} />
+            <Bar dataKey="n" fill={C.gold} radius={[6, 6, 0, 0]} name="Réalisées" />
+          </BarChart>
+        </ResponsiveContainer>
+      </Card>
+
+      <Card style={{ marginBottom: 20 }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold" style={{ color: C.navy }}>À recontacter / Rappels</h3>
+          <span style={{ fontSize: 12, color: C.muted }}>date modifiable</span>
+        </div>
+        {rappels.length === 0 ? <p style={{ color: C.muted, fontSize: 14 }}>Aucun contrat actif. Les rappels de passage apparaîtront ici.</p> :
+          <div className="flex flex-col gap-2">{rappels.map((c) => (
+            <div key={c.id} className="flex justify-between items-center gap-3 flex-wrap" style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "10px 12px" }}>
+              <div style={{ minWidth: 0 }}>
+                <div className="font-semibold" style={{ color: C.navy }}>{clientName(c.clientId)}</div>
+                <div style={{ fontSize: 12.5, color: C.muted }}>{c.niveau} · {c.frequence}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span style={{ width: 9, height: 9, borderRadius: "50%", background: dateColor(c.prochainPassage), flexShrink: 0 }} />
+                <input type="date" value={c.prochainPassage || ""} onChange={(e) => setRappel(c.id, e.target.value)} style={{ ...inputStyle, width: "auto", padding: "6px 9px", fontSize: 13, color: dateColor(c.prochainPassage), fontWeight: 600 }} />
+                {!c.prochainPassage && <Button variant="ghost" style={{ padding: "6px 9px", fontSize: 12.5 }} onClick={() => setRappel(c.id, nextFromFreq(c.dateDebut, c.frequence))}>Auto</Button>}
+                <Button style={{ padding: "6px 10px", fontSize: 12.5, whiteSpace: "nowrap" }} onClick={() => onPassage(c)}><Check size={14} /> Passage effectué</Button>
+              </div>
+            </div>))}
+          </div>}
+      </Card>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <div>
+          <h3 className="font-bold mb-2" style={{ color: C.navy }}>Prochaines interventions</h3>
+          {upcoming.length === 0 ? <Card><p style={{ color: C.muted, fontSize: 14 }}>Rien de planifié. Ajoute une intervention.</p></Card> :
+            <div className="flex flex-col gap-2">{upcoming.slice(0, 5).map((i) => (
+              <Card key={i.id} style={{ padding: 12 }}>
+                <div className="flex justify-between items-start gap-2">
+                  <div><div className="font-semibold" style={{ color: C.text }}>{clientName(i.clientId)}</div><div style={{ fontSize: 12.5, color: C.muted }}>{i.nuisible} · {i.siteNom || "Site principal"}</div></div>
+                  <Badge color={C.gold}><Calendar size={11} />{fmtDate(i.date)}</Badge>
+                </div>
+              </Card>))}
+            </div>}
+        </div>
+        <div>
+          <h3 className="font-bold mb-2" style={{ color: C.navy }}>Suivis à programmer</h3>
+          {suivis.length === 0 ? <Card><p style={{ color: C.muted, fontSize: 14 }}>Aucun suivi en attente.</p></Card> :
+            <div className="flex flex-col gap-2">{suivis.slice(0, 5).map((i) => (
+              <Card key={i.id} style={{ padding: 12 }}>
+                <div className="flex justify-between items-start gap-2">
+                  <div><div className="font-semibold" style={{ color: C.text }}>{clientName(i.clientId)}</div><div style={{ fontSize: 12.5, color: C.muted }}>{i.nuisible}</div></div>
+                  <Badge color={C.red}>{fmtDate(i.prochaineDate)}</Badge>
+                </div>
+              </Card>))}
+            </div>}
+        </div>
+      </div>
+      {clients.length === 0 && <div className="mt-6"><Button onClick={() => setView("clients")}><Plus size={16} /> Créer mon premier client</Button></div>}
+      {interModal && <InterModal it={interModal} clients={clients} onClose={() => setInterModal(null)} onSave={(it) => { save.inters(inters.map((x) => x.id === it.id ? it : x)); setInterModal(null); }} />}
+    </>
+  );
+}
+
+/* ------------------------------------------------------- PDF fiche + agenda */
+let jsPDFPromise = null;
+function loadJsPDF() {
+  if (window.jspdf?.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  if (jsPDFPromise) return jsPDFPromise;
+  jsPDFPromise = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    s.onload = () => res(window.jspdf.jsPDF);
+    s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  return jsPDFPromise;
+}
+
+async function buildFiche(it, client, s) {
+  const JsPDF = await loadJsPDF();
+  const doc = new JsPDF({ unit: "mm", format: "a4" });
+  const W = 210;
+  // bandeau
+  doc.setFillColor(26, 31, 46); doc.rect(0, 0, W, 30, "F");
+  let tx = 14;
+  if (s.logo) { try { doc.addImage(s.logo, "PNG", 14, 7, 16, 16); tx = 36; } catch (e) {} }
+  doc.setTextColor(181, 134, 58); doc.setFont("helvetica", "bold"); doc.setFontSize(16);
+  doc.text(s.nom || "", tx, 14);
+  doc.setTextColor(245, 240, 232); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
+  doc.text(s.accroche || "", tx, 19.5);
+  doc.setFontSize(8);
+  [s.telephone, s.email, s.siteweb].filter(Boolean).forEach((t, i) => doc.text(t, W - 14, 10 + i * 4, { align: "right" }));
+  // titre
+  let y = 42;
+  doc.setTextColor(26, 31, 46); doc.setFont("helvetica", "bold"); doc.setFontSize(15);
+  doc.text("FICHE D'INTERVENTION", 14, y);
+  doc.setDrawColor(181, 134, 58); doc.setLineWidth(0.8); doc.line(14, y + 2, 86, y + 2);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(110, 114, 128);
+  doc.text("Édité le " + fmtDate(today()), W - 14, y, { align: "right" });
+  y += 12;
+  const label = (t) => { doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(181, 134, 58); doc.text(t.toUpperCase(), 14, y); y += 5.5; };
+  const row = (k, v) => { doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(26, 31, 46); doc.text(k, 14, y); doc.setFont("helvetica", "normal"); doc.setTextColor(40, 42, 54); doc.text(String(v || "—"), 58, y); y += 6; };
+  label("Client");
+  row("Nom", client?.nom);
+  row("Site", it.siteNom || "Site principal");
+  if (client?.adresse) row("Adresse", client.adresse);
+  if (client?.telephone) row("Téléphone", client.telephone);
+  y += 2; label("Intervention");
+  row("Date", fmtDate(it.date));
+  row("Type", it.type);
+  row("Nuisible", it.nuisible);
+  row("Statut", it.statut);
+  if (it.produits) row("Produits", it.produits);
+  if (it.observations) {
+    y += 2; label("Observations");
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(40, 42, 54);
+    const lines = doc.splitTextToSize(it.observations, W - 28); doc.text(lines, 14, y); y += lines.length * 5 + 2;
+  }
+  y += 2; label("Contrôles HACCP");
+  HACCP.forEach((h) => {
+    const ok = (it.haccp || []).includes(h);
+    doc.setDrawColor(120); doc.setLineWidth(0.4); doc.rect(14, y - 3.2, 3.4, 3.4);
+    if (ok) { doc.setDrawColor(62, 142, 90); doc.setLineWidth(0.7); doc.line(14.6, y - 1.6, 15.6, y - 0.4); doc.line(15.6, y - 0.4, 17.4, y - 3); }
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(40, 42, 54); doc.text(h, 20, y); y += 5.8;
+  });
+  if (it.suiviRequis && it.prochaineDate) { y += 2; label("Prochain passage"); doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(40, 42, 54); doc.text(fmtDate(it.prochaineDate), 14, y); y += 6; }
+  y += 10; doc.setDrawColor(190); doc.setLineWidth(0.3); doc.setFontSize(9); doc.setTextColor(110, 114, 128);
+  doc.text("Signature opérateur", 14, y); doc.line(52, y, 96, y);
+  doc.text("Signature client", 112, y); doc.line(146, y, 196, y);
+  // pied de page
+  const fy = 286; doc.setDrawColor(181, 134, 58); doc.setLineWidth(0.5); doc.line(14, fy - 4, W - 14, fy - 4);
+  doc.setFontSize(7.5); doc.setTextColor(110, 114, 128);
+  const foot = [s.zone, s.telephone, s.email, s.siteweb, s.tva ? "TVA " + s.tva : ""].filter(Boolean).join("   ·   ");
+  doc.text(foot, W / 2, fy, { align: "center" });
+  return doc.output("bloburl");
+}
+
+async function buildAttestation(client, s, contrat, pests) {
+  const JsPDF = await loadJsPDF();
+  const doc = new JsPDF({ unit: "mm", format: "a4" });
+  const W = 210;
+  doc.setFillColor(26, 31, 46); doc.rect(0, 0, W, 30, "F");
+  let tx = 14;
+  if (s.logo) { try { doc.addImage(s.logo, "PNG", 14, 7, 16, 16); tx = 36; } catch (e) {} }
+  doc.setTextColor(181, 134, 58); doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text(s.nom || "", tx, 14);
+  doc.setTextColor(245, 240, 232); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.text(s.accroche || "", tx, 19.5);
+  doc.setFontSize(8); [s.telephone, s.email, s.siteweb].filter(Boolean).forEach((t, i) => doc.text(t, W - 14, 10 + i * 4, { align: "right" }));
+  let y = 45;
+  doc.setTextColor(26, 31, 46); doc.setFont("helvetica", "bold"); doc.setFontSize(14);
+  doc.text("ATTESTATION DE LUTTE CONTRE LES NUISIBLES", W / 2, y, { align: "center" });
+  doc.setDrawColor(181, 134, 58); doc.setLineWidth(0.8); doc.line(W / 2 - 62, y + 3, W / 2 + 62, y + 3);
+  y += 14;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(181, 134, 58); doc.text("ÉTABLISSEMENT CONCERNÉ", 14, y); y += 6;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10.5); doc.setTextColor(40, 42, 54);
+  doc.text(client.nom || "—", 14, y); y += 5.5;
+  if (client.adresse) { doc.text(client.adresse, 14, y); y += 5.5; }
+  if (client.tva) { doc.text("N° TVA : " + client.tva, 14, y); y += 5.5; }
+  if (client.sites?.length) { const l = doc.splitTextToSize("Sites : " + client.sites.join(", "), W - 28); doc.text(l, 14, y); y += l.length * 5.5; }
+  y += 5;
+  doc.setFontSize(10); doc.setTextColor(40, 42, 54);
+  const corps = `Je soussigné, agissant pour ${s.nom || "l'entreprise"}${s.gerant ? ` (${s.gerant})` : ""}, atteste assurer la surveillance et la lutte contre les nuisibles au sein de l'établissement désigné ci-dessus.\n\nLes prestations sont réalisées selon un plan de Gestion Intégrée des Nuisibles (GIN) conforme aux principes HACCP et aux exigences de l'AFSCA : inspection des locaux, mise en place et contrôle de postes de surveillance sécurisés, et actions curatives consignées dans un registre d'intervention.`;
+  const lines = doc.splitTextToSize(corps, W - 28); doc.text(lines, 14, y); y += lines.length * 5 + 5;
+  const row = (k, v) => { doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(26, 31, 46); doc.text(k, 14, y); doc.setFont("helvetica", "normal"); doc.setTextColor(40, 42, 54); const l = doc.splitTextToSize(String(v || "—"), W - 78); doc.text(l, 64, y); y += Math.max(6, l.length * 5.2); };
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(181, 134, 58); doc.text("MODALITÉS", 14, y); y += 6;
+  const fin = new Date(); fin.setFullYear(fin.getFullYear() + 1);
+  row("Formule", contrat ? `${contrat.niveau} — passages ${contrat.frequence.toLowerCase()}` : "Selon contrat / à la demande");
+  row("Nuisibles surveillés", (pests && pests.length) ? pests.join(", ") : "Rongeurs, insectes rampants et volants");
+  row("Période de validité", `du ${fmtDate(today())} au ${fin.toLocaleDateString("fr-BE", { day: "2-digit", month: "long", year: "numeric" })}`);
+  y += 10;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(40, 42, 54);
+  doc.text("Fait le " + fmtDate(today()) + ".", 14, y); y += 16;
+  doc.text("Cachet et signature :", 14, y); doc.setDrawColor(190); doc.setLineWidth(0.3); doc.line(60, y, 120, y);
+  const fy = 286; doc.setDrawColor(181, 134, 58); doc.setLineWidth(0.5); doc.line(14, fy - 4, W - 14, fy - 4);
+  doc.setFontSize(7.5); doc.setTextColor(110, 114, 128);
+  const foot = [s.zone, s.telephone, s.email, s.siteweb, s.tva ? "TVA " + s.tva : ""].filter(Boolean).join("   ·   ");
+  doc.text(foot, W / 2, fy, { align: "center" });
+  return doc.output("bloburl");
+}
+
+async function buildIpmPdf(report, client, s, contrat) {
+  const JsPDF = await loadJsPDF();
+  const doc = new JsPDF({ unit: "mm", format: "a4" });
+  const W = 210, M = 14;
+  let y = 0;
+  const header = () => {
+    doc.setFillColor(26, 31, 46); doc.rect(0, 0, W, 26, "F");
+    let tx = M;
+    if (s.logo) { try { doc.addImage(s.logo, "PNG", M, 5, 14, 14); tx = 34; } catch (e) {} }
+    doc.setTextColor(181, 134, 58); doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.text(s.nom || "", tx, 12);
+    doc.setTextColor(245, 240, 232); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.text("Dossier de suivi IPM — lutte intégrée contre les nuisibles", tx, 17);
+    doc.setFontSize(7.5); doc.setTextColor(245, 240, 232); doc.text("Passage du " + fmtDate(report.date), W - M, 12, { align: "right" });
+    y = 33;
+  };
+  const footer = () => {
+    const fy = 288; doc.setDrawColor(181, 134, 58); doc.setLineWidth(0.4); doc.line(M, fy - 4, W - M, fy - 4);
+    doc.setFontSize(7); doc.setTextColor(110, 114, 128);
+    const foot = [s.zone, s.telephone, s.email, s.tva ? "TVA " + s.tva : ""].filter(Boolean).join("   ·   ");
+    doc.text(foot, W / 2, fy, { align: "center" });
+  };
+  const ensure = (h) => { if (y + h > 280) { footer(); doc.addPage(); header(); } };
+  const sec = (t) => { ensure(11); doc.setFillColor(245, 240, 232); doc.rect(M, y, W - 2 * M, 6.5, "F"); doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(181, 134, 58); doc.text(t.toUpperCase(), M + 2, y + 4.6); y += 10; };
+  const kv = (k, v, x, w) => { doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(26, 31, 46); doc.text(k, x, y); doc.setFont("helvetica", "normal"); doc.setTextColor(40, 42, 54); const lines = doc.splitTextToSize(String(v || "—"), w); doc.text(lines, x + 30, y); return lines.length; };
+  const box = (x, yy, on) => { doc.setDrawColor(120); doc.setLineWidth(0.3); doc.rect(x, yy - 3, 3, 3); if (on) { doc.setDrawColor(62, 142, 90); doc.setLineWidth(0.6); doc.line(x + 0.5, yy - 1.4, x + 1.3, yy - 0.6); doc.line(x + 1.3, yy - 0.6, x + 2.7, yy - 2.6); } };
+  const checks = (options, selected) => {
+    const sel = selected || []; const colW = (W - 2 * M) / 2;
+    for (let i = 0; i < options.length; i += 2) {
+      ensure(6);
+      for (let j = 0; j < 2 && i + j < options.length; j++) {
+        const o = options[i + j], x = M + j * colW;
+        box(x, y, sel.includes(o)); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54);
+        doc.text(doc.splitTextToSize(o, colW - 6)[0], x + 5, y);
+      }
+      y += 5.5;
+    }
+    y += 1;
+  };
+
+  header();
+  // Identification + contrat
+  sec("Identification du client");
+  doc.text("", M, y);
+  let n = kv("Raison soc.", client?.nom, M, 70); kv("N° TVA", client?.tva, W / 2, 60); y += Math.max(n, 1) * 4.5 + 1.5;
+  n = kv("Adresse", client?.adresse, M, W - 2 * M - 30); y += n * 4.5 + 1.5;
+  kv("Contact", client?.contact, M, 60); kv("Tél.", client?.telephone, W / 2, 60); y += 6;
+  kv("Type", client?.type, M, 60); if (contrat) kv("Contrat", `${contrat.niveau} · ${contrat.frequence}`, W / 2, 60); y += 8;
+
+  sec("Informations sur la visite");
+  kv("Date", fmtDate(report.date), M, 50); kv("Type", report.typeVisite, W / 2, 60); y += 6;
+  if (report.siteNom) { kv("Site", report.siteNom, M, W - 2 * M - 30); y += 6; }
+  kv("Arrivée", report.heureArrivee, M, 40); kv("Départ", report.heureDepart, W / 2, 40); y += 6;
+  kv("Technicien", report.technicien, M, 60); kv("N° rapport", report.numRapport, W / 2, 50); y += 9;
+
+  sec("Zones inspectées"); checks(ZONES, report.zones);
+  sec("Constat général");
+  kv("Activité détectée", report.activiteDetectee, M, 30); kv("Espèces", report.especes, W / 2, 60); y += 7;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(26, 31, 46); doc.text("Indices :", M, y); y += 5; checks(INDICES, report.indices);
+  if (report.constat) { ensure(12); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54); const l = doc.splitTextToSize(report.constat, W - 2 * M); doc.text(l, M, y); y += l.length * 4.5 + 3; }
+
+  sec("Actions réalisées"); checks(ACTIONS_VISITE, report.actions);
+
+  sec("Relevé des postes & pièges");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(95, 95, 95);
+  doc.text("N°", M, y); doc.text("Emplacement", M + 12, y); doc.text("Type", M + 78, y); doc.text("Conso", M + 120, y); doc.text("État", M + 138, y); doc.text("Action", M + 160, y); y += 1.5;
+  doc.setDrawColor(210); doc.setLineWidth(0.2); doc.line(M, y, W - M, y); y += 4;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(40, 42, 54);
+  (report.equipements || []).forEach((e) => {
+    ensure(6);
+    doc.text(String(e.numero || "—"), M, y);
+    doc.text(doc.splitTextToSize(e.emplacement || "—", 62)[0], M + 12, y);
+    doc.text((e.type || "").split(" - ")[0], M + 78, y);
+    doc.text(String(e.consommation || "—"), M + 120, y);
+    doc.text(doc.splitTextToSize(e.etat || "—", 20)[0], M + 138, y);
+    doc.text(doc.splitTextToSize(e.action || "—", 36)[0], M + 160, y);
+    y += 5.5;
+  });
+  if (!(report.equipements || []).length) { doc.text("Aucun poste enregistré.", M, y); y += 6; }
+  y += 2;
+
+  if ((report.produits || []).length) {
+    sec("Produits biocides utilisés");
+    report.produits.forEach((p) => { ensure(6); doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(40, 42, 54); doc.text(doc.splitTextToSize(`${p.nom || "—"} · ${p.substance || "—"} · autoris. ${p.autorisation || "—"} · ${p.quantite || "—"} · ${p.zone || "—"}`, W - 2 * M)[0], M, y); y += 5.5; });
+    y += 2;
+  }
+
+  sec("Niveau d'infestation");
+  NUISIBLES_INFEST.forEach((nm) => { const inf = (report.infestation || {})[nm]; if (inf && (inf.niveau !== "Absent" || inf.tendance !== "Stable")) { ensure(5.5); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54); doc.text(`${nm} : ${inf.niveau} (${inf.tendance})`, M, y); y += 5; } });
+  y += 2;
+
+  if ((report.pointsCritiques || []).length) { sec("Points critiques"); checks(POINTS_CRITIQUES, report.pointsCritiques); }
+  if (report.observations) { sec("Observations"); ensure(12); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54); const l = doc.splitTextToSize(report.observations, W - 2 * M); doc.text(l, M, y); y += l.length * 4.5 + 3; }
+
+  if ((report.recommandations || []).length) {
+    sec("Recommandations");
+    report.recommandations.forEach((rc, i) => { ensure(6); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54); const l = doc.splitTextToSize(`${i + 1}. ${rc.texte || "—"}${rc.responsable ? " — " + rc.responsable : ""}${rc.echeance ? " (éch. " + rc.echeance + ")" : ""}`, W - 2 * M); doc.text(l, M, y); y += l.length * 4.5 + 1.5; });
+    ensure(6); doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.text("Suivi recommandations précédentes : ", M, y); doc.setFont("helvetica", "normal"); doc.text(report.suiviPrecedent || "—", M + 62, y); y += 8;
+  }
+
+  sec("Synthèse & attestation");
+  kv("Sous contrôle", report.sousControle, M, 20); kv("Visite suppl.", report.visiteSupp, W / 2, 20); y += 6;
+  kv("Prochain passage", report.prochainPassage ? fmtDate(report.prochainPassage) : "—", M, 50); y += 6;
+  if (report.remarquesClient) { doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); const l = doc.splitTextToSize("Remarques client : " + report.remarquesClient, W - 2 * M); doc.text(l, M, y); y += l.length * 4.5; }
+  y += 6; ensure(20);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54);
+  doc.text("Technicien : " + (report.technicien || ""), M, y); doc.text("Signature client :", W / 2, y);
+  doc.setDrawColor(190); doc.line(M + 26, y, W / 2 - 8, y); doc.line(W / 2 + 26, y, W - M, y); y += 10;
+
+  // Photos
+  const phs = report.photos || [];
+  if (phs.length) {
+    const map = await signedUrls(phs.map((p) => p.path));
+    sec("Photos");
+    const cw = (W - 2 * M - 6) / 2, ch = 50;
+    for (let i = 0; i < phs.length; i++) {
+      if (i % 2 === 0) ensure(ch + 4);
+      const url = map[phs[i].path]; const x = M + (i % 2) * (cw + 6);
+      if (url) {
+        try { const res = await fetch(url); const blob = await res.blob(); const dataUrl = await new Promise((rs) => { const fr = new FileReader(); fr.onload = () => rs(fr.result); fr.readAsDataURL(blob); }); doc.addImage(dataUrl, "JPEG", x, y, cw, ch); doc.setDrawColor(210); doc.rect(x, y, cw, ch); } catch (e) {}
+      }
+      if (i % 2 === 1) y += ch + 4;
+    }
+    if (phs.length % 2 === 1) y += ch + 4;
+  }
+
+  footer();
+  return doc.output("bloburl");
+}
+
+function FicheModal({ url, filename, title = "Document", onClose }) {
+  return (
+    <Modal open onClose={onClose} title={title}
+      footer={<><Button variant="ghost" onClick={onClose}>Fermer</Button><a href={url} download={filename} style={{ textDecoration: "none" }}><Button><Download size={15} /> Télécharger le PDF</Button></a></>}>
+      <iframe src={url} title="Aperçu de la fiche" style={{ width: "100%", height: "62vh", border: `1px solid ${C.line}`, borderRadius: 10, background: "#fff" }} />
+    </Modal>
+  );
+}
+
+function CalendarView({ inters, clientName, onNew, onEdit }) {
+  const now = new Date();
+  const [cur, setCur] = useState({ y: now.getFullYear(), m: now.getMonth() });
+  const [sel, setSel] = useState(today());
+  const first = new Date(cur.y, cur.m, 1);
+  const startDow = (first.getDay() + 6) % 7;
+  const nbDays = new Date(cur.y, cur.m + 1, 0).getDate();
+  const iso = (d) => `${cur.y}-${String(cur.m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const forDay = (d) => inters.filter((i) => i.date === iso(d));
+  const move = (delta) => setCur((c) => { let m = c.m + delta, y = c.y; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } return { y, m }; });
+  const cells = []; for (let i = 0; i < startDow; i++) cells.push(null); for (let d = 1; d <= nbDays; d++) cells.push(d);
+  const selList = inters.filter((i) => i.date === sel).sort((a, b) => a.statut.localeCompare(b.statut));
+  const monthLabel = first.toLocaleDateString("fr-BE", { month: "long", year: "numeric" });
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={() => move(-1)} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 9, padding: "6px 12px", cursor: "pointer", color: C.navy, fontWeight: 700 }}>‹</button>
+        <span style={{ fontWeight: 700, color: C.navy, textTransform: "capitalize", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{monthLabel}</span>
+        <button onClick={() => move(1)} style={{ background: "transparent", border: `1px solid ${C.line}`, borderRadius: 9, padding: "6px 12px", cursor: "pointer", color: C.navy, fontWeight: 700 }}>›</button>
+      </div>
+      <div className="grid" style={{ gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 4 }}>
+        {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((d) => <div key={d} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: C.muted, padding: "2px 0" }}>{d}</div>)}
+      </div>
+      <div className="grid" style={{ gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+        {cells.map((d, k) => {
+          if (!d) return <div key={k} />;
+          const list = forDay(d); const isToday = iso(d) === today(); const isSel = iso(d) === sel;
+          return (
+            <button key={k} onClick={() => setSel(iso(d))} style={{ minHeight: 58, textAlign: "left", padding: 4, borderRadius: 9, cursor: "pointer", background: isSel ? C.navy : C.surface, border: `1px solid ${isSel ? C.navy : isToday ? C.gold : C.line}`, display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: isSel ? C.cream : isToday ? C.gold : C.text }}>{d}</span>
+              {list.slice(0, 2).map((i) => <span key={i.id} style={{ fontSize: 8.5, fontWeight: 600, borderRadius: 4, padding: "1px 3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", background: statutColor(i.statut) + "33", color: isSel ? "#fff" : statutColor(i.statut) }}>{clientName(i.clientId)}</span>)}
+              {list.length > 2 && <span style={{ fontSize: 8.5, color: isSel ? C.cream : C.muted }}>+{list.length - 2}</span>}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex items-center justify-between mb-2">
+        <h3 className="font-bold" style={{ color: C.navy }}>{fmtDate(sel)}</h3>
+        <Button style={{ padding: "7px 11px", fontSize: 13 }} onClick={() => onNew(sel)}><Plus size={15} /> Ajouter ce jour</Button>
+      </div>
+      {selList.length === 0 ? <Card style={{ padding: 12 }}><p style={{ color: C.muted, fontSize: 13.5 }}>Aucune intervention ce jour.</p></Card> :
+        <div className="flex flex-col gap-2">{selList.map((i) => (
+          <Card key={i.id} style={{ padding: 12, cursor: "pointer" }} >
+            <div onClick={() => onEdit(i)} className="flex justify-between items-center gap-2">
+              <div><div className="font-semibold" style={{ color: C.navy }}>{clientName(i.clientId)}</div><div style={{ fontSize: 12.5, color: C.muted }}>{i.nuisible} · {i.type}</div></div>
+              <Badge color={statutColor(i.statut)}>{i.statut}</Badge>
+            </div>
+          </Card>))}
+        </div>}
+    </>
+  );
+}
+
+/* --------------------------------------------------------- INTERVENTIONS */
+const blankInter = () => ({ id: uid(), clientId: "", siteNom: "", date: today(), nuisible: NUISIBLES[0], type: "Curatif", statut: "Planifiée", produits: "", observations: "", suiviRequis: false, prochaineDate: "", haccp: [] });
+
+function Interventions({ inters, clients, save, clientName, settings, ipm }) {
+  const [modal, setModal] = useState(null);
+  const [q, setQ] = useState("");
+  const [filt, setFilt] = useState("Tous");
+  const [mode, setMode] = useState("liste");
+  const [fiche, setFiche] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [flow, setFlow] = useState(null);
+  const [selClient, setSelClient] = useState("");
+  const [clientModal, setClientModal] = useState(null);
+  const [ipmEditing, setIpmEditing] = useState(null);
+
+  const openFiche = async (it) => {
+    setBusy(it.id);
+    try { const client = clients.find((c) => c.id === it.clientId); const url = await buildFiche(it, client, settings); setFiche({ url, filename: `fiche-${slug(client?.nom || "client")}-${it.date}.pdf`, title: "Fiche d'intervention" }); }
+    catch (e) { alert("Impossible de générer le PDF. Vérifie ta connexion internet."); }
+    finally { setBusy(null); }
+  };
+  const openIpmPdf = async (rep) => {
+    setBusy(rep.id);
+    try { const client = clients.find((c) => c.id === rep.clientId); const url = await buildIpmPdf(rep, client, settings, null); setFiche({ url, filename: `dossier-ipm-${slug(client?.nom || "client")}-${rep.date}.pdf`, title: "Dossier IPM" }); }
+    catch (e) { alert("Impossible de générer le PDF. Vérifie ta connexion internet."); }
+    finally { setBusy(null); }
+  };
+
+  const interList = inters
+    .filter((i) => filt === "Tous" || i.statut === filt)
+    .filter((i) => !q || clientName(i.clientId).toLowerCase().includes(q.toLowerCase()) || i.nuisible.toLowerCase().includes(q.toLowerCase()))
+    .map((i) => ({ kind: "inter", ...i }));
+  const ipmList = (filt === "Tous" || filt === "IPM")
+    ? (ipm || []).filter((r) => !q || clientName(r.clientId).toLowerCase().includes(q.toLowerCase())).map((r) => ({ kind: "ipm", ...r }))
+    : [];
+  const rows = [...interList, ...ipmList].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  const upsert = (it) => { const ex = inters.some((x) => x.id === it.id); save.inters(ex ? inters.map((x) => x.id === it.id ? it : x) : [...inters, it]); setModal(null); };
+  const del = (id) => save.inters(inters.filter((x) => x.id !== id));
+  const markDone = (it) => save.inters(inters.map((x) => x.id === it.id ? { ...x, statut: "Réalisée" } : x));
+  const saveIpm = (rep) => { const ex = (ipm || []).some((x) => x.id === rep.id); save.ipm(ex ? ipm.map((x) => x.id === rep.id ? rep : x) : [...(ipm || []), rep]); setIpmEditing(null); };
+  const delIpm = (id) => save.ipm((ipm || []).filter((x) => x.id !== id));
+
+  const startExisting = () => { if (selClient) { setIpmEditing({ rep: blankIpm(selClient), clientId: selClient }); setFlow(null); setSelClient(""); } };
+  const onNewClientSaved = (c) => { save.clients([...clients, c]); setClientModal(null); setIpmEditing({ rep: blankIpm(c.id), clientId: c.id }); };
+  const editClient = ipmEditing ? clients.find((c) => c.id === ipmEditing.clientId) : null;
+  const editHistory = ipmEditing ? (ipm || []).filter((r) => r.clientId === ipmEditing.clientId) : [];
+
+  return (
+    <>
+      <PageTitle action={<Button onClick={() => setFlow("choose")}><Plus size={16} /> Nouveau</Button>}>Interventions</PageTitle>
+      <div className="flex gap-2 mb-4">
+        {["liste", "agenda"].map((m) => (
+          <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: `1px solid ${mode === m ? C.gold : C.line}`, background: mode === m ? C.gold : "transparent", color: mode === m ? "#fff" : C.muted, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>{m === "liste" ? "Liste" : "Agenda"}</button>
+        ))}
+      </div>
+      {mode === "agenda" && <CalendarView inters={inters} clientName={clientName} onNew={(d) => setModal({ ...blankInter(), date: d })} onEdit={setModal} />}
+      {mode === "liste" && <>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
+          <Search size={16} color={C.muted} style={{ position: "absolute", left: 11, top: 11 }} />
+          <TextInput placeholder="Rechercher client ou nuisible…" value={q} onChange={(e) => setQ(e.target.value)} style={{ paddingLeft: 34 }} />
+        </div>
+        <Select value={filt} onChange={(e) => setFilt(e.target.value)} style={{ ...inputStyle, width: "auto" }}>
+          {["Tous", ...STATUTS, "IPM"].map((s) => <option key={s}>{s}</option>)}
+        </Select>
+      </div>
+
+      {rows.length === 0 ? <Empty icon={ClipboardList} title="Rien à afficher" hint="Clique sur « Nouveau » pour créer un rapport IPM." /> :
+        <div className="flex flex-col gap-2.5">{rows.map((i) => i.kind === "ipm" ? (
+          <Card key={i.id} style={{ padding: 14 }}>
+            <div className="flex justify-between items-start gap-3">
+              <div style={{ minWidth: 0 }}>
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="font-bold" style={{ color: C.navy }}>{clientName(i.clientId)}</span>
+                  <Badge color={C.navy}>IPM</Badge>
+                </div>
+                <div style={{ fontSize: 13, color: C.muted }}>Rapport de passage{i.siteNom ? ` · ${i.siteNom}` : ""} · {(i.equipements || []).length} poste(s)</div>
+                <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3 }} className="flex items-center gap-1"><Calendar size={12} />{fmtDate(i.date)}</div>
+              </div>
+              <div className="flex gap-1.5 flex-shrink-0">
+                <Button variant="ghost" style={{ padding: "6px 9px" }} title="PDF dossier IPM" onClick={() => openIpmPdf(i)}>{busy === i.id ? <span style={{ fontSize: 12 }}>…</span> : <FileText size={15} />}</Button>
+                <Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => setIpmEditing({ rep: (ipm || []).find((x) => x.id === i.id) || i, clientId: i.clientId })}><Pencil size={15} /></Button>
+                <Button variant="danger" style={{ padding: "6px 9px" }} onClick={() => { if (confirm("Supprimer ce rapport IPM ?")) delIpm(i.id); }}><Trash2 size={15} /></Button>
+              </div>
+            </div>
+          </Card>
+        ) : (
+          <Card key={i.id} style={{ padding: 14 }}>
+            <div className="flex justify-between items-start gap-3">
+              <div style={{ minWidth: 0 }}>
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="font-bold" style={{ color: C.navy }}>{clientName(i.clientId)}</span>
+                  <Badge color={statutColor(i.statut)}>{i.statut}</Badge>
+                </div>
+                <div style={{ fontSize: 13, color: C.muted }}>{i.nuisible} · {i.type}{i.siteNom ? ` · ${i.siteNom}` : ""}</div>
+                <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3 }} className="flex items-center gap-1"><Calendar size={12} />{fmtDate(i.date)}{i.suiviRequis && i.prochaineDate ? ` · suivi ${fmtDate(i.prochaineDate)}` : ""}</div>
+              </div>
+              <div className="flex gap-1.5 flex-shrink-0">
+                {i.statut === "Planifiée" && <Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => markDone(i)}><Check size={15} /></Button>}
+                <Button variant="ghost" style={{ padding: "6px 9px" }} title="Fiche PDF" onClick={() => openFiche(i)}>{busy === i.id ? <span style={{ fontSize: 12 }}>…</span> : <FileText size={15} />}</Button>
+                <Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => setModal(i)}><Pencil size={15} /></Button>
+                <Button variant="danger" style={{ padding: "6px 9px" }} onClick={() => del(i.id)}><Trash2 size={15} /></Button>
+              </div>
+            </div>
+          </Card>
+        ))}
+        </div>}
+      </>}
+
+      {flow === "choose" && <Modal open onClose={() => setFlow(null)} title="Nouveau rapport IPM"
+        footer={<Button variant="ghost" onClick={() => setFlow(null)}>Annuler</Button>}>
+        <p style={{ fontSize: 14, color: C.muted }}>Pour qui réalises-tu ce rapport ?</p>
+        <Button variant="dark" onClick={() => setFlow("existing")} disabled={clients.length === 0} style={{ justifyContent: "center" }}><Users size={16} /> Client existant</Button>
+        <Button onClick={() => { setFlow(null); setClientModal(blankClient()); }} style={{ justifyContent: "center" }}><Plus size={16} /> Nouveau client</Button>
+      </Modal>}
+      {flow === "existing" && <Modal open onClose={() => setFlow(null)} title="Choisir le client"
+        footer={<><Button variant="ghost" onClick={() => setFlow("choose")}>Retour</Button><Button onClick={startExisting} disabled={!selClient}>Continuer</Button></>}>
+        <Field label="Client"><Select value={selClient} onChange={(e) => setSelClient(e.target.value)}><option value="">— Choisir —</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select></Field>
+      </Modal>}
+
+      {clientModal && <ClientModal cl={clientModal} onClose={() => setClientModal(null)} onSave={onNewClientSaved} />}
+      {ipmEditing && <IPMEditor report={ipmEditing.rep} client={editClient} history={editHistory} onClose={() => setIpmEditing(null)} onSave={saveIpm} />}
+      {modal && <InterModal it={modal} clients={clients} onClose={() => setModal(null)} onSave={upsert} />}
+      {fiche && <FicheModal url={fiche.url} filename={fiche.filename} title={fiche.title || "Fiche d'intervention"} onClose={() => setFiche(null)} />}
+    </>
+  );
+}
+
+function InterModal({ it, clients, onClose, onSave }) {
+  const [f, setF] = useState(it);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const client = clients.find((c) => c.id === f.clientId);
+  const toggleHaccp = (h) => set("haccp", f.haccp.includes(h) ? f.haccp.filter((x) => x !== h) : [...f.haccp, h]);
+  return (
+    <Modal open onClose={onClose} title={it.clientId ? "Modifier l'intervention" : "Nouvelle intervention"}
+      footer={<><Button variant="ghost" onClick={onClose}>Annuler</Button><Button onClick={() => f.clientId && onSave(f)}>Enregistrer</Button></>}>
+      <Field label="Client"><Select value={f.clientId} onChange={(e) => set("clientId", e.target.value)}><option value="">— Choisir —</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select></Field>
+      {client?.sites?.length > 0 && <Field label="Site"><Select value={f.siteNom} onChange={(e) => set("siteNom", e.target.value)}><option value="">Site principal</option>{client.sites.map((s, k) => <option key={k} value={s}>{s}</option>)}</Select></Field>}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date"><TextInput type="date" value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
+        <Field label="Statut"><Select value={f.statut} onChange={(e) => set("statut", e.target.value)}>{STATUTS.map((s) => <option key={s}>{s}</option>)}</Select></Field>
+        <Field label="Nuisible"><Select value={f.nuisible} onChange={(e) => set("nuisible", e.target.value)}>{NUISIBLES.map((s) => <option key={s}>{s}</option>)}</Select></Field>
+        <Field label="Type"><Select value={f.type} onChange={(e) => set("type", e.target.value)}>{INTER_TYPES.map((s) => <option key={s}>{s}</option>)}</Select></Field>
+      </div>
+      <Field label="Produits / biocides utilisés"><TextInput value={f.produits} onChange={(e) => set("produits", e.target.value)} placeholder="Ex. Permas 250 Combi EC…" /></Field>
+      <Field label="Observations"><TextArea value={f.observations} onChange={(e) => set("observations", e.target.value)} /></Field>
+      <label className="flex items-center gap-2 text-sm font-semibold" style={{ color: C.text }}>
+        <input type="checkbox" checked={f.suiviRequis} onChange={(e) => set("suiviRequis", e.target.checked)} /> Suivi requis
+      </label>
+      {f.suiviRequis && <Field label="Date du prochain passage"><TextInput type="date" value={f.prochaineDate} onChange={(e) => set("prochaineDate", e.target.value)} /></Field>}
+      <div>
+        <div className="text-sm font-semibold mb-2" style={{ color: C.muted }}>Points de contrôle HACCP</div>
+        <div className="flex flex-col gap-1.5">{HACCP.map((h) => (
+          <label key={h} className="flex items-center gap-2 text-sm" style={{ color: C.text }}>
+            <input type="checkbox" checked={f.haccp.includes(h)} onChange={() => toggleHaccp(h)} /> {h}
+          </label>))}</div>
+      </div>
+    </Modal>
+  );
+}
+
+/* -------------------------------------------------------------- CLIENTS */
+const blankClient = () => ({ id: uid(), nom: "", type: CLIENT_TYPES[0], tva: "", contact: "", telephone: "", email: "", adresse: "", sites: [], notes: "" });
+
+function Clients({ clients, save, inters, settings, contrats, ipm }) {
+  const [modal, setModal] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [doc, setDoc] = useState(null);
+  const upsert = (c) => { const ex = clients.some((x) => x.id === c.id); save.clients(ex ? clients.map((x) => x.id === c.id ? c : x) : [...clients, c]); setModal(null); };
+  const del = (id) => save.clients(clients.filter((x) => x.id !== id));
+  const interCount = (id) => inters.filter((i) => i.clientId === id).length;
+
+  return (
+    <>
+      <PageTitle action={<Button onClick={() => setModal(blankClient())}><Plus size={16} /> Ajouter</Button>}>Clients</PageTitle>
+      {clients.length === 0 ? <Empty icon={Users} title="Aucun client" hint="Ajoute tes clients HORECA, syndics, maisons de repos ou particuliers." /> :
+        <div className="grid md:grid-cols-2 gap-3">{clients.map((c) => (
+          <Card key={c.id}>
+            <div className="flex justify-between items-start gap-2 mb-2">
+              <div><div className="font-bold" style={{ color: C.navy, fontSize: 15.5 }}>{c.nom}</div><Badge color={C.gold}>{c.type}</Badge></div>
+              <div className="flex gap-1.5"><Button variant="ghost" style={{ padding: "5px 8px" }} title="Dossier & documents" onClick={() => setDetail(c)}><FolderOpen size={14} /></Button><Button variant="ghost" style={{ padding: "5px 8px" }} onClick={() => setModal(c)}><Pencil size={14} /></Button><Button variant="danger" style={{ padding: "5px 8px" }} onClick={() => del(c.id)}><Trash2 size={14} /></Button></div>
+            </div>
+            <div className="flex flex-col gap-1" style={{ fontSize: 13, color: C.muted }}>
+              {c.contact && <span>{c.contact}</span>}
+              {c.telephone && <span className="flex items-center gap-1.5"><Phone size={12} />{c.telephone}</span>}
+              {c.email && <span className="flex items-center gap-1.5"><Mail size={12} />{c.email}</span>}
+              {c.adresse && <span className="flex items-center gap-1.5"><MapPin size={12} />{c.adresse}</span>}
+              {c.tva && <span>TVA {c.tva}</span>}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: C.gold, fontWeight: 600 }}>{interCount(c.id)} intervention(s){c.sites?.length ? ` · ${c.sites.length} site(s)` : ""}</div>
+          </Card>))}
+        </div>}
+      {modal && <ClientModal cl={modal} onClose={() => setModal(null)} onSave={upsert} />}
+      {detail && <ClientDetail client={detail} inters={inters} contrats={contrats} settings={settings} ipm={ipm} saveIpm={save.ipm} saveInters={save.inters} onClose={() => setDetail(null)} onDoc={setDoc} />}
+      {doc && <FicheModal url={doc.url} filename={doc.filename} title={doc.title} onClose={() => setDoc(null)} />}
+    </>
+  );
+}
+
+function ClientModal({ cl, onClose, onSave }) {
+  const [f, setF] = useState(cl);
+  const [site, setSite] = useState("");
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  return (
+    <Modal open onClose={onClose} title={cl.nom ? "Modifier le client" : "Nouveau client"}
+      footer={<><Button variant="ghost" onClick={onClose}>Annuler</Button><Button onClick={() => f.nom && onSave(f)}>Enregistrer</Button></>}>
+      <Field label="Nom / Raison sociale"><TextInput value={f.nom} onChange={(e) => set("nom", e.target.value)} placeholder="Ex. MES'HRY DELICIOUS SRL" /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Type"><Select value={f.type} onChange={(e) => set("type", e.target.value)}>{CLIENT_TYPES.map((s) => <option key={s}>{s}</option>)}</Select></Field>
+        <Field label="N° de TVA (B2B)"><TextInput value={f.tva} onChange={(e) => set("tva", e.target.value)} placeholder="BE0xxx.xxx.xxx" /></Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Personne de contact"><TextInput value={f.contact} onChange={(e) => set("contact", e.target.value)} /></Field>
+        <Field label="Téléphone"><TextInput value={f.telephone} onChange={(e) => set("telephone", e.target.value)} /></Field>
+      </div>
+      <Field label="E-mail"><TextInput type="email" value={f.email} onChange={(e) => set("email", e.target.value)} /></Field>
+      <Field label="Adresse"><TextInput value={f.adresse} onChange={(e) => set("adresse", e.target.value)} /></Field>
+      <Field label="Sites / établissements">
+        <div className="flex gap-2"><TextInput value={site} onChange={(e) => setSite(e.target.value)} placeholder="Ajouter un site…" onKeyDown={(e) => { if (e.key === "Enter" && site.trim()) { set("sites", [...(f.sites || []), site.trim()]); setSite(""); } }} /><Button variant="dark" onClick={() => { if (site.trim()) { set("sites", [...(f.sites || []), site.trim()]); setSite(""); } }}><Plus size={15} /></Button></div>
+        <div className="flex flex-wrap gap-1.5 mt-1">{(f.sites || []).map((s, k) => <span key={k} style={{ background: C.cream2, borderRadius: 8, padding: "4px 8px", fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 5 }}>{s}<X size={12} style={{ cursor: "pointer" }} onClick={() => set("sites", f.sites.filter((_, j) => j !== k))} /></span>)}</div>
+      </Field>
+      <Field label="Notes"><TextArea value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+    </Modal>
+  );
+}
+
+function ClientDetail({ client, inters, contrats, settings, ipm, saveIpm, saveInters, onClose, onDoc }) {
+  const [busy, setBusy] = useState(null);
+  const [ipmEditing, setIpmEditing] = useState(null);
+  const list = inters.filter((i) => i.clientId === client.id).sort((a, b) => b.date.localeCompare(a.date));
+  const delInter = (id) => { if (confirm("Supprimer cette intervention ?")) saveInters(inters.filter((x) => x.id !== id)); };
+  const contrat = contrats?.find((c) => c.clientId === client.id && c.actif);
+  const myIpm = (ipm || []).filter((r) => r.clientId === client.id).sort((a, b) => b.date.localeCompare(a.date));
+  const genFiche = async (it) => {
+    setBusy(it.id);
+    try { const url = await buildFiche(it, client, settings); onDoc({ url, filename: `fiche-${slug(client.nom)}-${it.date}.pdf`, title: "Fiche d'intervention" }); }
+    catch (e) { alert("PDF impossible. Vérifie ta connexion internet."); }
+    finally { setBusy(null); }
+  };
+  const genAtt = async () => {
+    setBusy("att");
+    try { const pests = [...new Set(list.map((i) => i.nuisible))]; const url = await buildAttestation(client, settings, contrat, pests); onDoc({ url, filename: `attestation-afsca-${slug(client.nom)}.pdf`, title: "Attestation AFSCA" }); }
+    catch (e) { alert("PDF impossible. Vérifie ta connexion internet."); }
+    finally { setBusy(null); }
+  };
+  const saveReport = (rep) => { const ex = (ipm || []).some((x) => x.id === rep.id); saveIpm(ex ? ipm.map((x) => x.id === rep.id ? rep : x) : [...(ipm || []), rep]); setIpmEditing(null); };
+  const delReport = (id) => { if (confirm("Supprimer ce rapport IPM ?")) saveIpm((ipm || []).filter((x) => x.id !== id)); };
+  const genIpm = async (rep) => {
+    setBusy(rep.id);
+    try { const url = await buildIpmPdf(rep, client, settings, contrat); onDoc({ url, filename: `dossier-ipm-${slug(client.nom)}-${rep.date}.pdf`, title: "Dossier IPM" }); }
+    catch (e) { alert("PDF impossible. Vérifie ta connexion internet."); }
+    finally { setBusy(null); }
+  };
+  return (
+    <Modal open onClose={onClose} title={`Dossier · ${client.nom}`}
+      footer={<Button variant="ghost" onClick={onClose}>Fermer</Button>}>
+      <div style={{ fontSize: 13, color: C.muted }} className="flex flex-col gap-1">
+        <div><Badge color={C.gold}>{client.type}</Badge></div>
+        {client.tva && <span style={{ marginTop: 4 }}>TVA {client.tva}</span>}
+        {client.adresse && <span>{client.adresse}</span>}
+        {contrat && <span>Contrat {contrat.niveau} · {contrat.frequence}</span>}
+      </div>
+      <Button onClick={genAtt} style={{ marginTop: 4 }}>{busy === "att" ? <span style={{ fontSize: 13 }}>Génération…</span> : <><ShieldCheck size={15} /> Générer l'attestation AFSCA</>}</Button>
+
+      <div style={{ borderTop: `1px solid ${C.line}`, marginTop: 8, paddingTop: 12 }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="font-bold" style={{ color: C.navy }}>Dossier IPM ({myIpm.length})</div>
+          <Button onClick={() => setIpmEditing(blankIpm(client.id))} style={{ padding: "6px 11px", fontSize: 13 }}><Plus size={15} /> Nouveau</Button>
+        </div>
+        {myIpm.length === 0 ? <p style={{ color: C.muted, fontSize: 13.5 }}>Aucun rapport IPM. Crée le premier avec « Nouveau ».</p> :
+          <div className="flex flex-col gap-2">{myIpm.map((r) => (
+            <div key={r.id} className="flex justify-between items-center gap-2" style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "9px 11px" }}>
+              <div onClick={() => setIpmEditing(r)} style={{ cursor: "pointer", flex: 1 }}>
+                <div className="font-semibold" style={{ color: C.navy, fontSize: 13.5 }}>Passage du {fmtDate(r.date)}{r.siteNom ? ` · ${r.siteNom}` : ""}</div>
+                <div style={{ fontSize: 12, color: C.muted }}>{r.equipements.length} équipement(s){r.photos?.length ? ` · ${r.photos.length} photo(s)` : ""}</div>
+              </div>
+              <Button variant="ghost" style={{ padding: "6px 9px" }} title="PDF du dossier" onClick={() => genIpm(r)}>{busy === r.id ? <span style={{ fontSize: 12 }}>…</span> : <FileText size={14} />}</Button>
+              <Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => setIpmEditing(r)}><Pencil size={14} /></Button>
+              <Button variant="danger" style={{ padding: "6px 9px" }} onClick={() => delReport(r.id)}><Trash2 size={14} /></Button>
+            </div>))}
+          </div>}
+      </div>
+
+      <div style={{ borderTop: `1px solid ${C.line}`, marginTop: 8, paddingTop: 12 }}>
+        <div className="font-bold mb-2" style={{ color: C.navy }}>Interventions & fiches ({list.length})</div>
+        {list.length === 0 ? <p style={{ color: C.muted, fontSize: 13.5 }}>Aucune intervention enregistrée pour ce client.</p> :
+          <div className="flex flex-col gap-2">{list.map((i) => (
+            <div key={i.id} className="flex justify-between items-center gap-2" style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "9px 11px" }}>
+              <div><div className="font-semibold" style={{ color: C.text, fontSize: 13.5 }}>{i.nuisible}</div><div style={{ fontSize: 12, color: C.muted }}>{fmtDate(i.date)} · {i.type} · {i.statut}</div></div>
+              <div className="flex gap-1.5">
+                <Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => genFiche(i)}>{busy === i.id ? <span style={{ fontSize: 12 }}>…</span> : <><FileText size={14} /> Fiche</>}</Button>
+                <Button variant="danger" style={{ padding: "6px 9px" }} onClick={() => delInter(i.id)}><Trash2 size={14} /></Button>
+              </div>
+            </div>))}
+          </div>}
+      </div>
+      {ipmEditing && <IPMEditor report={ipmEditing} client={client} history={myIpm} onClose={() => setIpmEditing(null)} onSave={saveReport} />}
+    </Modal>
+  );
+}
+
+function IPMEditor({ report, client, history, onClose, onSave }) {
+  const [r, setR] = useState(() => {
+    const merged = { ...blankIpm(report.clientId), ...report };
+    ["zones", "indices", "actions", "pointsCritiques", "equipements", "produits", "recommandations", "photos"].forEach((k) => { if (!Array.isArray(merged[k])) merged[k] = []; });
+    if (!merged.infestation || typeof merged.infestation !== "object") merged.infestation = {};
+    return merged;
+  });
+  const [uploading, setUploading] = useState(false);
+  const [urls, setUrls] = useState({});
+  useEffect(() => {
+    const missing = (r.photos || []).map((p) => p.path).filter((p) => !urls[p]);
+    if (!missing.length) return;
+    signedUrls(missing).then((m) => setUrls((prev) => ({ ...prev, ...m })));
+  }, [r.photos]);
+  const set = (k, v) => setR((p) => ({ ...p, [k]: v }));
+  const setIn = (list, id, k, v) => setR((p) => ({ ...p, [list]: p[list].map((e) => e.id === id ? { ...e, [k]: v } : e) }));
+  const addIn = (list, blank) => setR((p) => ({ ...p, [list]: [...p[list], blank()] }));
+  const rmIn = (list, id) => setR((p) => ({ ...p, [list]: p[list].filter((e) => e.id !== id) }));
+  const setInfest = (n, k, v) => setR((p) => ({ ...p, infestation: { ...p.infestation, [n]: { niveau: "Absent", tendance: "Stable", ...(p.infestation[n] || {}), [k]: v } } }));
+  const others = (history || []).filter((h) => h.id !== r.id);
+  const reprise = () => {
+    const src = (r.siteNom ? others.find((h) => h.siteNom === r.siteNom) : null) || others[0];
+    if (!src) return;
+    setR((p) => ({ ...p, equipements: (src.equipements || []).map((e) => ({ ...e, id: uid(), consommation: "0", etat: "RAS", action: "" })), produits: (src.produits || []).map((x) => ({ ...x, id: uid() })) }));
+  };
+  const onPhoto = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try { const added = []; for (const f of files) added.push(await uploadPhoto(f, r.id)); setR((p) => ({ ...p, photos: [...(p.photos || []), ...added] })); }
+    catch (err) { alert("Envoi de la photo impossible. Vérifie le bucket « ipm-photos » dans Supabase, ou ta connexion."); }
+    finally { setUploading(false); e.target.value = ""; }
+  };
+  const removePhoto = (ph) => { deletePhoto(ph.path); setR((p) => ({ ...p, photos: p.photos.filter((x) => x.id !== ph.id) })); };
+  const YesNo = ({ k }) => <Select value={r[k]} onChange={(e) => set(k, e.target.value)}><option>Oui</option><option>Non</option></Select>;
+
+  return (
+    <Modal open onClose={onClose} title="Rapport de passage IPM"
+      footer={<><Button variant="ghost" onClick={onClose}>Annuler</Button><Button onClick={() => onSave(r)}>Enregistrer</Button></>}>
+
+      <SubHead>Informations sur la visite</SubHead>
+      {client?.sites?.length > 0 && <Field label="Site concerné"><Select value={r.siteNom} onChange={(e) => set("siteNom", e.target.value)}><option value="">— Choisir le site —</option>{client.sites.map((st) => <option key={st} value={st}>{st}</option>)}</Select></Field>}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date du passage"><TextInput type="date" value={r.date} onChange={(e) => set("date", e.target.value)} /></Field>
+        <Field label="Type de visite"><Select value={r.typeVisite} onChange={(e) => set("typeVisite", e.target.value)}>{TYPE_VISITE.map((t) => <option key={t}>{t}</option>)}</Select></Field>
+        <Field label="Heure d'arrivée"><TextInput type="time" value={r.heureArrivee} onChange={(e) => set("heureArrivee", e.target.value)} /></Field>
+        <Field label="Heure de départ"><TextInput type="time" value={r.heureDepart} onChange={(e) => set("heureDepart", e.target.value)} /></Field>
+        <Field label="Technicien"><TextInput value={r.technicien} onChange={(e) => set("technicien", e.target.value)} /></Field>
+        <Field label="N° de rapport"><TextInput value={r.numRapport} onChange={(e) => set("numRapport", e.target.value)} /></Field>
+      </div>
+
+      <SubHead>Zones inspectées</SubHead>
+      <CheckGroup options={ZONES} value={r.zones} onChange={(v) => set("zones", v)} cols={2} />
+
+      <SubHead>Constat général</SubHead>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Activité détectée"><Select value={r.activiteDetectee} onChange={(e) => set("activiteDetectee", e.target.value)}><option>Non</option><option>Oui</option></Select></Field>
+        <Field label="Espèce(s)"><TextInput value={r.especes} onChange={(e) => set("especes", e.target.value)} /></Field>
+      </div>
+      <div><div style={{ fontSize: 13, fontWeight: 600, color: C.muted, marginBottom: 6 }}>Indices observés</div><CheckGroup options={INDICES} value={r.indices} onChange={(v) => set("indices", v)} cols={2} /></div>
+      <Field label="Description"><TextArea value={r.constat} onChange={(e) => set("constat", e.target.value)} /></Field>
+
+      <SubHead>Actions réalisées</SubHead>
+      <CheckGroup options={ACTIONS_VISITE} value={r.actions} onChange={(v) => set("actions", v)} cols={2} />
+
+      <div className="flex items-center justify-between" style={{ marginTop: 8 }}>
+        <SubHead>Relevé des postes & pièges</SubHead>
+        {others.length > 0 && <Button variant="ghost" style={{ padding: "5px 9px", fontSize: 12.5 }} onClick={reprise}><RotateCcw size={13} /> Reprendre le dernier passage</Button>}
+      </div>
+      {r.equipements.length === 0 && <p style={{ color: C.muted, fontSize: 13 }}>Aucun poste. {others.length > 0 ? "Reprends le dernier passage ou a" : "A"}joute-en un.</p>}
+      <div className="flex flex-col gap-2">
+        {r.equipements.map((e) => (
+          <div key={e.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 11 }} className="flex flex-col gap-2">
+            <div className="flex gap-2 items-start">
+              <div style={{ flex: 1 }} className="grid grid-cols-2 gap-2">
+                <Select value={e.type} onChange={(ev) => setIn("equipements", e.id, "type", ev.target.value)}>{EQUIP_CODES.map((t) => <option key={t}>{t}</option>)}</Select>
+                <TextInput value={e.numero} onChange={(ev) => setIn("equipements", e.id, "numero", ev.target.value)} placeholder="N°" />
+              </div>
+              <Button variant="danger" style={{ padding: "6px 8px" }} onClick={() => rmIn("equipements", e.id)}><Trash2 size={14} /></Button>
+            </div>
+            <TextInput value={e.emplacement} onChange={(ev) => setIn("equipements", e.id, "emplacement", ev.target.value)} placeholder="Emplacement" />
+            <div className="grid grid-cols-3 gap-2">
+              <Select value={e.consommation} onChange={(ev) => setIn("equipements", e.id, "consommation", ev.target.value)}>{CONSO.map((a) => <option key={a}>{a}</option>)}</Select>
+              <Select value={e.etat} onChange={(ev) => setIn("equipements", e.id, "etat", ev.target.value)}>{ETAT_POSTE.map((a) => <option key={a}>{a}</option>)}</Select>
+              <TextInput value={e.action} onChange={(ev) => setIn("equipements", e.id, "action", ev.target.value)} placeholder="Action" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <Button variant="ghost" onClick={() => addIn("equipements", blankEquip)} style={{ alignSelf: "flex-start" }}><Plus size={15} /> Ajouter un poste</Button>
+
+      <SubHead>Produits biocides utilisés</SubHead>
+      <div className="flex flex-col gap-2">
+        {r.produits.map((p) => (
+          <div key={p.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 11 }} className="flex flex-col gap-2">
+            <div className="flex gap-2 items-start">
+              <TextInput value={p.nom} onChange={(ev) => setIn("produits", p.id, "nom", ev.target.value)} placeholder="Nom commercial" />
+              <Button variant="danger" style={{ padding: "6px 8px" }} onClick={() => rmIn("produits", p.id)}><Trash2 size={14} /></Button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <TextInput value={p.substance} onChange={(ev) => setIn("produits", p.id, "substance", ev.target.value)} placeholder="Substance active" />
+              <TextInput value={p.autorisation} onChange={(ev) => setIn("produits", p.id, "autorisation", ev.target.value)} placeholder="N° autorisation BE" />
+              <TextInput value={p.quantite} onChange={(ev) => setIn("produits", p.id, "quantite", ev.target.value)} placeholder="Quantité" />
+              <TextInput value={p.zone} onChange={(ev) => setIn("produits", p.id, "zone", ev.target.value)} placeholder="Zone d'application" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <Button variant="ghost" onClick={() => addIn("produits", blankProduit)} style={{ alignSelf: "flex-start" }}><Plus size={15} /> Ajouter un produit</Button>
+
+      <SubHead>Niveau d'infestation</SubHead>
+      <div className="flex flex-col gap-1.5">
+        {NUISIBLES_INFEST.map((n) => (
+          <div key={n} className="flex items-center gap-2">
+            <span style={{ flex: 1, fontSize: 13, color: C.text }}>{n}</span>
+            <Select value={(r.infestation[n] || {}).niveau || "Absent"} onChange={(e) => setInfest(n, "niveau", e.target.value)} style={{ ...inputStyle, width: "auto" }}>{NIVEAUX_INFEST.map((x) => <option key={x}>{x}</option>)}</Select>
+            <Select value={(r.infestation[n] || {}).tendance || "Stable"} onChange={(e) => setInfest(n, "tendance", e.target.value)} style={{ ...inputStyle, width: "auto" }}>{TENDANCES.map((x) => <option key={x}>{x}</option>)}</Select>
+          </div>
+        ))}
+      </div>
+
+      <SubHead>Points critiques relevés</SubHead>
+      <CheckGroup options={POINTS_CRITIQUES} value={r.pointsCritiques} onChange={(v) => set("pointsCritiques", v)} cols={1} />
+      <Field label="Observations complémentaires"><TextArea value={r.observations} onChange={(e) => set("observations", e.target.value)} /></Field>
+
+      <SubHead>Recommandations</SubHead>
+      <div className="flex flex-col gap-2">
+        {r.recommandations.map((rc) => (
+          <div key={rc.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 11 }} className="flex flex-col gap-2">
+            <div className="flex gap-2 items-start">
+              <TextInput value={rc.texte} onChange={(ev) => setIn("recommandations", rc.id, "texte", ev.target.value)} placeholder="Recommandation / action corrective" />
+              <Button variant="danger" style={{ padding: "6px 8px" }} onClick={() => rmIn("recommandations", rc.id)}><Trash2 size={14} /></Button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <TextInput value={rc.responsable} onChange={(ev) => setIn("recommandations", rc.id, "responsable", ev.target.value)} placeholder="Responsable" />
+              <TextInput value={rc.echeance} onChange={(ev) => setIn("recommandations", rc.id, "echeance", ev.target.value)} placeholder="Échéance" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <Button variant="ghost" onClick={() => addIn("recommandations", blankReco)} style={{ alignSelf: "flex-start" }}><Plus size={15} /> Ajouter une recommandation</Button>
+      <Field label="Suivi des recommandations précédentes"><Select value={r.suiviPrecedent} onChange={(e) => set("suiviPrecedent", e.target.value)}>{["Toutes", "Partiellement", "Aucune", "Sans objet"].map((x) => <option key={x}>{x}</option>)}</Select></Field>
+
+      <SubHead>Synthèse & attestation</SubHead>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Situation sous contrôle"><YesNo k="sousControle" /></Field>
+        <Field label="Visite supplémentaire nécessaire"><YesNo k="visiteSupp" /></Field>
+        <Field label="Prochain passage prévu le"><TextInput type="date" value={r.prochainPassage} onChange={(e) => set("prochainPassage", e.target.value)} /></Field>
+      </div>
+      <Field label="Remarques du client"><TextArea value={r.remarquesClient} onChange={(e) => set("remarquesClient", e.target.value)} /></Field>
+
+      <SubHead>Photos</SubHead>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <span style={{ fontSize: 13, color: C.muted }}>Jointes au rapport (privées)</span>
+        <div className="flex gap-2">
+          <input type="file" accept="image/*" capture="environment" onChange={onPhoto} style={{ display: "none" }} id={`cam-${r.id}`} />
+          <input type="file" accept="image/*" multiple onChange={onPhoto} style={{ display: "none" }} id={`gal-${r.id}`} />
+          <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`cam-${r.id}`).click()} disabled={uploading}><Camera size={14} /> Photo</Button>
+          <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`gal-${r.id}`).click()} disabled={uploading}>{uploading ? "Envoi…" : <><ImageIcon size={14} /> Galerie / fichier</>}</Button>
+        </div>
+      </div>
+      {(r.photos || []).length === 0 ? <p style={{ color: C.muted, fontSize: 13 }}>Aucune photo jointe.</p> :
+        <div className="grid grid-cols-3 gap-2">{r.photos.map((ph) => (
+          <div key={ph.id} style={{ position: "relative" }}>
+            {urls[ph.path] ? <img src={urls[ph.path]} alt="" style={{ width: "100%", height: 84, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.line}` }} />
+              : <div style={{ width: "100%", height: 84, borderRadius: 8, border: `1px solid ${C.line}`, background: C.cream2, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: C.muted }}>…</div>}
+            <button onClick={() => removePhoto(ph)} style={{ position: "absolute", top: 3, right: 3, background: "#000A", border: "none", borderRadius: 6, color: "#fff", cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}><X size={13} /></button>
+          </div>))}
+        </div>}
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------- CONTRATS */
+const blankContrat = () => ({ id: uid(), clientId: "", niveau: "Confort", frequence: "Trimestriel", dateDebut: today(), prixHT: "", actif: true, prochainPassage: "" });
+
+function Contrats({ contrats, clients, save, clientName, inters, saveMany }) {
+  const [modal, setModal] = useState(null);
+  const [interModal, setInterModal] = useState(null);
+  const onPassage = (c) => {
+    const { ni, nc } = doPassage(c, contrats);
+    saveMany({ inters: [...inters, ni], contrats: nc });
+    setInterModal(ni);
+  };
+  const upsert = (c) => { const ex = contrats.some((x) => x.id === c.id); save.contrats(ex ? contrats.map((x) => x.id === c.id ? c : x) : [...contrats, c]); setModal(null); };
+  const del = (id) => save.contrats(contrats.filter((x) => x.id !== id));
+  const totalYear = contrats.filter((c) => c.actif).reduce((s, c) => {
+    const mult = { Mensuel: 12, Bimestriel: 6, Trimestriel: 4, Semestriel: 2, Annuel: 1 }[c.frequence] || 1;
+    return s + (Number(c.prixHT) || 0) * mult;
+  }, 0);
+
+  return (
+    <>
+      <PageTitle action={<Button onClick={() => setModal(blankContrat())} disabled={clients.length === 0}><Plus size={16} /> Ajouter</Button>}>Contrats récurrents</PageTitle>
+      {clients.length === 0 && <Card style={{ marginBottom: 14 }}><p style={{ color: C.muted, fontSize: 14 }}>Crée d'abord un client dans l'onglet Clients : un contrat est toujours rattaché à un client.</p></Card>}
+      {contrats.length > 0 && <Card style={{ marginBottom: 14, background: C.navy, color: C.cream, borderColor: C.navy }}>
+        <div style={{ fontSize: 12.5, color: C.goldL, fontWeight: 600 }}>Récurrent annuel estimé (HT)</div>
+        <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{eur(totalYear)}</div>
+      </Card>}
+      {contrats.length === 0 ? <Empty icon={FileText} title="Aucun contrat" hint="Crée des contrats Essentiel, Confort ou Premium avec leur fréquence de passage." /> :
+        <div className="flex flex-col gap-2.5">{contrats.map((c) => (
+          <Card key={c.id} style={{ padding: 14 }}>
+            <div className="flex justify-between items-start gap-3">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap mb-1"><span className="font-bold" style={{ color: C.navy }}>{clientName(c.clientId)}</span><Badge color={c.actif ? C.green : C.muted}>{c.actif ? "Actif" : "Suspendu"}</Badge></div>
+                <div style={{ fontSize: 13, color: C.muted }}>{c.niveau} · {c.frequence} · depuis {fmtDate(c.dateDebut)}</div>
+                <div style={{ fontSize: 14, color: C.gold, fontWeight: 700, marginTop: 3 }}>{eur(c.prixHT)} / passage</div>
+                {c.prochainPassage && <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 3, color: dateColor(c.prochainPassage) }}>Prochain passage : {fmtDate(c.prochainPassage)}</div>}
+              </div>
+              <div className="flex flex-col gap-1.5 flex-shrink-0">
+                <Button style={{ padding: "6px 10px", fontSize: 12.5, whiteSpace: "nowrap" }} onClick={() => onPassage(c)}><Check size={14} /> Passage effectué</Button>
+                <div className="flex gap-1.5"><Button variant="ghost" style={{ padding: "6px 9px" }} onClick={() => setModal(c)}><Pencil size={15} /></Button><Button variant="danger" style={{ padding: "6px 9px" }} onClick={() => del(c.id)}><Trash2 size={15} /></Button></div>
+              </div>
+            </div>
+          </Card>))}
+        </div>}
+      {modal && <ContratModal ct={modal} clients={clients} onClose={() => setModal(null)} onSave={upsert} />}
+      {interModal && <InterModal it={interModal} clients={clients} onClose={() => setInterModal(null)} onSave={(it) => { save.inters(inters.map((x) => x.id === it.id ? it : x)); setInterModal(null); }} />}
+    </>
+  );
+}
+
+function ContratModal({ ct, clients, onClose, onSave }) {
+  const [f, setF] = useState(ct);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  return (
+    <Modal open onClose={onClose} title={ct.clientId ? "Modifier le contrat" : "Nouveau contrat"}
+      footer={<><Button variant="ghost" onClick={onClose}>Annuler</Button><Button onClick={() => f.clientId && onSave(f)}>Enregistrer</Button></>}>
+      <Field label="Client"><Select value={f.clientId} onChange={(e) => set("clientId", e.target.value)}><option value="">— Choisir —</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Niveau"><Select value={f.niveau} onChange={(e) => set("niveau", e.target.value)}>{NIVEAUX.map((s) => <option key={s}>{s}</option>)}</Select></Field>
+        <Field label="Fréquence"><Select value={f.frequence} onChange={(e) => set("frequence", e.target.value)}>{FREQUENCES.map((s) => <option key={s}>{s}</option>)}</Select></Field>
+        <Field label="Date de début"><TextInput type="date" value={f.dateDebut} onChange={(e) => set("dateDebut", e.target.value)} /></Field>
+        <Field label="Prix HT / passage (€)"><TextInput type="number" value={f.prixHT} onChange={(e) => set("prixHT", e.target.value)} /></Field>
+      </div>
+      <Field label="Prochain passage / à recontacter">
+        <div className="flex gap-2">
+          <TextInput type="date" value={f.prochainPassage || ""} onChange={(e) => set("prochainPassage", e.target.value)} />
+          <Button variant="ghost" style={{ whiteSpace: "nowrap", padding: "9px 11px" }} onClick={() => set("prochainPassage", nextFromFreq(f.dateDebut, f.frequence))} title="Calculer depuis la fréquence">Auto</Button>
+        </div>
+      </Field>
+      <label className="flex items-center gap-2 text-sm font-semibold" style={{ color: C.text }}><input type="checkbox" checked={f.actif} onChange={(e) => set("actif", e.target.checked)} /> Contrat actif</label>
+    </Modal>
+  );
+}
+
+/* ----------------------------------------------------- STATIONS / GIN */
+const blankStation = () => ({ id: uid(), clientId: "", siteNom: "", numero: "", type: STATION_TYPES[0], emplacement: "", releves: [] });
+
+function Tendances({ ipm, clients }) {
+  const withReports = clients.filter((c) => (ipm || []).some((r) => r.clientId === c.id));
+  const [clientId, setClientId] = useState(withReports[0]?.id || "");
+  const [site, setSite] = useState("");
+  const sites = [...new Set((ipm || []).filter((r) => r.clientId === clientId && r.siteNom).map((r) => r.siteNom))];
+  const reps = (ipm || []).filter((r) => r.clientId === clientId && (!site || r.siteNom === site)).sort((a, b) => a.date.localeCompare(b.date));
+  const data = reps.map((r) => {
+    const infEntries = NUISIBLES_INFEST.map((n) => (r.infestation || {})[n]).filter((x) => x && x.niveau);
+    const inf = infEntries.length ? infEntries.reduce((s, x) => s + NIVEAUX_INFEST.indexOf(x.niveau), 0) / infEntries.length : null;
+    const eqv = (r.equipements || []).map((e) => CONSO.indexOf(e.consommation)).filter((v) => v >= 0);
+    const conso = eqv.length ? eqv.reduce((s, v) => s + v, 0) / eqv.length : null;
+    return { date: fmtDate(r.date).slice(0, 6), infestation: inf != null ? +inf.toFixed(2) : null, conso: conso != null ? +conso.toFixed(2) : null };
+  });
+
+  return (
+    <>
+      <PageTitle>Tendances d'activité</PageTitle>
+      <p style={{ color: C.muted, fontSize: 13, marginTop: -12, marginBottom: 16 }}>Évolution de la pression nuisible, calculée automatiquement à partir de tes rapports IPM.</p>
+
+      {withReports.length === 0 ? <Empty icon={Activity} title="Aucune donnée" hint="Crée des rapports IPM (avec niveaux d'infestation ou relevés de consommation) pour voir les tendances ici." /> : <>
+        <div className="flex gap-2 mb-4 flex-wrap">
+          <Select value={clientId} onChange={(e) => { setClientId(e.target.value); setSite(""); }} style={{ ...inputStyle, flex: 1, minWidth: 160 }}>
+            {withReports.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+          </Select>
+          {sites.length > 0 && <Select value={site} onChange={(e) => setSite(e.target.value)} style={{ ...inputStyle, width: "auto" }}>
+            <option value="">Tous les sites</option>{sites.map((s) => <option key={s} value={s}>{s}</option>)}
+          </Select>}
+        </div>
+
+        {reps.length < 2 ? <Card><p style={{ color: C.muted, fontSize: 14 }}>Il faut au moins 2 passages enregistrés pour ce client {site ? "et ce site " : ""}afin d'afficher une tendance.</p></Card> :
+          <Card>
+            <h3 className="font-bold mb-3" style={{ color: C.navy }}>Infestation & consommation des appâts</h3>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={data} margin={{ left: -6, right: 6 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.line} vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="inf" domain={[0, 3]} ticks={[0, 1, 2, 3]} tickFormatter={(v) => NIVEAUX_INFEST[v] || ""} tick={{ fill: C.muted, fontSize: 10 }} width={56} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="conso" orientation="right" domain={[0, 4]} ticks={[0, 1, 2, 3, 4]} tickFormatter={(v) => CONSO[v] || ""} tick={{ fill: C.muted, fontSize: 10 }} width={34} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v, n) => n === "Infestation" ? (NIVEAUX_INFEST[Math.round(v)] || v) : (CONSO[Math.round(v)] || v)} contentStyle={{ borderRadius: 10, border: `1px solid ${C.line}` }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Line yAxisId="inf" type="monotone" dataKey="infestation" name="Infestation" stroke={C.gold} strokeWidth={2.5} dot={{ fill: C.navy, r: 3 }} connectNulls />
+                <Line yAxisId="conso" type="monotone" dataKey="conso" name="Conso. appâts" stroke={C.navy} strokeWidth={2} strokeDasharray="4 3" dot={{ r: 2 }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+            <p style={{ fontSize: 11.5, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>Infestation : moyenne des niveaux relevés (Absent → Fort). Consommation : moyenne de la consommation des postes (0 → Totale). Une courbe qui monte = pression en hausse.</p>
+          </Card>}
+      </>}
+    </>
+  );
+}
+
+function Stations({ stations, clients, save }) {
+  const [modal, setModal] = useState(null);
+  const [releveFor, setReleveFor] = useState(null);
+  const upsert = (s) => { const ex = stations.some((x) => x.id === s.id); save.stations(ex ? stations.map((x) => x.id === s.id ? s : x) : [...stations, s]); setModal(null); };
+  const del = (id) => save.stations(stations.filter((x) => x.id !== id));
+  const addReleve = (st, r) => { save.stations(stations.map((x) => x.id === st.id ? { ...x, releves: [...x.releves, r] } : x)); setReleveFor(null); };
+  const cn = (id) => clients.find((c) => c.id === id)?.nom || "—";
+
+  const chartData = useMemo(() => {
+    const all = stations.flatMap((s) => s.releves.map((r) => ({ ...r, st: s.numero })));
+    const byDate = {};
+    all.forEach((r) => { byDate[r.date] = byDate[r.date] || { date: r.date, sum: 0, n: 0 }; byDate[r.date].sum += ACTIVITES.indexOf(r.activite); byDate[r.date].n++; });
+    return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date)).map((d) => ({ date: fmtDate(d.date).slice(0, 6), niveau: +(d.sum / d.n).toFixed(2) }));
+  }, [stations]);
+
+  return (
+    <>
+      <PageTitle action={<Button onClick={() => setModal(blankStation())} disabled={clients.length === 0}><Plus size={16} /> Poste</Button>}>Suivi GIN · postes</PageTitle>
+      <p style={{ color: C.muted, fontSize: 13, marginTop: -12, marginBottom: 16 }}>Gestion Intégrée des Nuisibles — surveille tes postes d'appâtage et l'évolution de l'activité.</p>
+      {clients.length === 0 && <Card style={{ marginBottom: 14 }}><p style={{ color: C.muted, fontSize: 14 }}>Crée d'abord un client dans l'onglet Clients : un poste est toujours rattaché à un client.</p></Card>}
+
+      {stations.length > 0 && chartData.length > 1 && <Card style={{ marginBottom: 16 }}>
+        <h3 className="font-bold mb-3" style={{ color: C.navy }}>Tendance d'activité (moyenne)</h3>
+        <ResponsiveContainer width="100%" height={190}>
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.line} vertical={false} />
+            <XAxis dataKey="date" tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+            <YAxis domain={[0, 4]} ticks={[0, 1, 2, 3, 4]} tickFormatter={(v) => ACTIVITES[v]?.slice(0, 8) || ""} tick={{ fill: C.muted, fontSize: 10 }} width={64} axisLine={false} tickLine={false} />
+            <Tooltip formatter={(v) => ACTIVITES[Math.round(v)] || v} contentStyle={{ borderRadius: 10, border: `1px solid ${C.line}` }} />
+            <Line type="monotone" dataKey="niveau" stroke={C.gold} strokeWidth={2.5} dot={{ fill: C.navy, r: 3 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </Card>}
+
+      {stations.length === 0 ? <Empty icon={Activity} title="Aucun poste" hint="Ajoute tes postes d'appâtage et enregistre tes relevés à chaque passage." /> :
+        <div className="flex flex-col gap-2.5">{stations.map((s) => {
+          const last = s.releves[s.releves.length - 1];
+          return (
+            <Card key={s.id} style={{ padding: 14 }}>
+              <div className="flex justify-between items-start gap-3">
+                <div>
+                  <div className="font-bold" style={{ color: C.navy }}>Poste {s.numero || "?"} · {cn(s.clientId)}</div>
+                  <div style={{ fontSize: 13, color: C.muted }}>{s.type}{s.emplacement ? ` · ${s.emplacement}` : ""}{s.siteNom ? ` · ${s.siteNom}` : ""}</div>
+                  {last ? <div style={{ marginTop: 5 }}><Badge color={ACTIVITES.indexOf(last.activite) >= 3 ? C.red : ACTIVITES.indexOf(last.activite) >= 1 ? C.amber : C.green}>{last.activite} · {fmtDate(last.date)}</Badge></div>
+                    : <div style={{ fontSize: 12.5, color: C.muted, marginTop: 5 }}>Aucun relevé</div>}
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Button variant="dark" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => setReleveFor(s)}>+ Relevé</Button>
+                  <div className="flex gap-1.5"><Button variant="ghost" style={{ padding: "5px 8px" }} onClick={() => setModal(s)}><Pencil size={14} /></Button><Button variant="danger" style={{ padding: "5px 8px" }} onClick={() => del(s.id)}><Trash2 size={14} /></Button></div>
+                </div>
+              </div>
+            </Card>);
+        })}</div>}
+
+      {modal && <StationModal st={modal} clients={clients} onClose={() => setModal(null)} onSave={upsert} />}
+      {releveFor && <ReleveModal st={releveFor} onClose={() => setReleveFor(null)} onSave={addReleve} />}
+    </>
+  );
+}
+
+function StationModal({ st, clients, onClose, onSave }) {
+  const [f, setF] = useState(st);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const client = clients.find((c) => c.id === f.clientId);
+  return (
+    <Modal open onClose={onClose} title={st.numero ? "Modifier le poste" : "Nouveau poste"}
+      footer={<><Button variant="ghost" onClick={onClose}>Annuler</Button><Button onClick={() => f.clientId && onSave(f)}>Enregistrer</Button></>}>
+      <Field label="Client"><Select value={f.clientId} onChange={(e) => set("clientId", e.target.value)}><option value="">— Choisir —</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}</Select></Field>
+      {client?.sites?.length > 0 && <Field label="Site"><Select value={f.siteNom} onChange={(e) => set("siteNom", e.target.value)}><option value="">Site principal</option>{client.sites.map((s, k) => <option key={k} value={s}>{s}</option>)}</Select></Field>}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="N° de poste"><TextInput value={f.numero} onChange={(e) => set("numero", e.target.value)} placeholder="01" /></Field>
+        <Field label="Type"><Select value={f.type} onChange={(e) => set("type", e.target.value)}>{STATION_TYPES.map((s) => <option key={s}>{s}</option>)}</Select></Field>
+      </div>
+      <Field label="Emplacement"><TextInput value={f.emplacement} onChange={(e) => set("emplacement", e.target.value)} placeholder="Ex. local poubelles, quai de réception…" /></Field>
+    </Modal>
+  );
+}
+
+function ReleveModal({ st, onClose, onSave }) {
+  const [r, setR] = useState({ date: today(), activite: ACTIVITES[0], consommation: "", action: "" });
+  const set = (k, v) => setR((p) => ({ ...p, [k]: v }));
+  return (
+    <Modal open onClose={onClose} title={`Relevé · poste ${st.numero || "?"}`}
+      footer={<><Button variant="ghost" onClick={onClose}>Annuler</Button><Button onClick={() => onSave(st, r)}>Enregistrer</Button></>}>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date"><TextInput type="date" value={r.date} onChange={(e) => set("date", e.target.value)} /></Field>
+        <Field label="Consommation %"><TextInput type="number" value={r.consommation} onChange={(e) => set("consommation", e.target.value)} placeholder="0" /></Field>
+      </div>
+      <Field label="Niveau d'activité"><Select value={r.activite} onChange={(e) => set("activite", e.target.value)}>{ACTIVITES.map((s) => <option key={s}>{s}</option>)}</Select></Field>
+      <Field label="Action menée"><TextInput value={r.action} onChange={(e) => set("action", e.target.value)} placeholder="Ex. remplacement appât, nettoyage…" /></Field>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------- RÉGLAGES entreprise */
+function CompanySettings({ settings, onSave }) {
+  const [f, setF] = useState(settings);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => { setF(settings); }, [settings]);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const onLogo = (e) => { const file = e.target.files?.[0]; if (file) fileToLogo(file, (d) => set("logo", d)); };
+  const submit = () => { onSave(f); setSaved(true); setTimeout(() => setSaved(false), 2500); };
+  return (
+    <>
+      <PageTitle action={<Button onClick={submit}><Check size={16} /> Enregistrer</Button>}>Réglages</PageTitle>
+      <Card style={{ marginBottom: 22 }}>
+        <h3 className="font-bold mb-4" style={{ color: C.navy }}>Mon entreprise</h3>
+        <div className="flex items-center gap-4 mb-4">
+          <div style={{ width: 74, height: 74, borderRadius: 14, background: f.logo ? "#fff" : C.cream2, border: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+            {f.logo ? <img src={f.logo} alt="logo" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <ImageIcon size={26} color={C.gold} />}
+          </div>
+          <div className="flex flex-col gap-2">
+            <input type="file" accept="image/*" onChange={onLogo} style={{ display: "none" }} id="logoUp" />
+            <Button variant="ghost" onClick={() => document.getElementById("logoUp").click()}><Upload size={15} /> Choisir un logo</Button>
+            {f.logo && <Button variant="danger" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => set("logo", "")}>Retirer le logo</Button>}
+          </div>
+        </div>
+        <div className="grid md:grid-cols-2 gap-3">
+          <Field label="Nom de l'entreprise"><TextInput value={f.nom} onChange={(e) => set("nom", e.target.value)} /></Field>
+          <Field label="Sous-titre / accroche"><TextInput value={f.accroche} onChange={(e) => set("accroche", e.target.value)} /></Field>
+          <Field label="Gérant / responsable"><TextInput value={f.gerant} onChange={(e) => set("gerant", e.target.value)} /></Field>
+          <Field label="N° de TVA"><TextInput value={f.tva} onChange={(e) => set("tva", e.target.value)} /></Field>
+          <Field label="Téléphone"><TextInput value={f.telephone} onChange={(e) => set("telephone", e.target.value)} /></Field>
+          <Field label="E-mail"><TextInput type="email" value={f.email} onChange={(e) => set("email", e.target.value)} /></Field>
+          <Field label="Site web"><TextInput value={f.siteweb} onChange={(e) => set("siteweb", e.target.value)} /></Field>
+          <Field label="Zone d'intervention"><TextInput value={f.zone} onChange={(e) => set("zone", e.target.value)} /></Field>
+        </div>
+        <div className="mt-3"><Field label="Adresse"><TextInput value={f.adresse} onChange={(e) => set("adresse", e.target.value)} /></Field></div>
+        {saved && <p style={{ color: C.green, fontWeight: 600, fontSize: 13, marginTop: 12 }}>Réglages enregistrés ✓</p>}
+      </Card>
+    </>
+  );
+}
+
+/* ----------------------------------------------------------- DATA / backup */
+function DataModule({ clients, inters, contrats, stations, save }) {
+  const [txt, setTxt] = useState("");
+  const [msg, setMsg] = useState("");
+  const exportData = () => { setTxt(JSON.stringify({ clients, inters, contrats, stations }, null, 2)); setMsg("Sauvegarde générée ci-dessous — copie-la dans un endroit sûr."); };
+  const importData = () => {
+    try { const d = JSON.parse(txt); save.clients(d.clients || []); save.inters(d.inters || []); save.contrats(d.contrats || []); save.stations(d.stations || []); setMsg("Données restaurées ✓"); }
+    catch { setMsg("JSON invalide — vérifie le texte collé."); }
+  };
+  const reset = () => { if (confirm("Tout effacer ? Cette action est définitive.")) { save.clients([]); save.inters([]); save.contrats([]); save.stations([]); setTxt(""); setMsg("Toutes les données ont été effacées."); } };
+  const loadDemo = () => {
+    const c1 = { ...blankClient(), nom: "MES'HRY DELICIOUS SRL", type: "HORECA", contact: "Gérant", telephone: "071 00 00 00", adresse: "Charleroi", sites: ["Charleroi", "Liège"] };
+    const c2 = { ...blankClient(), nom: "Résidence Les Jardins", type: "Syndic / Copropriété", adresse: "Charleroi", sites: ["Bâtiment A", "Bâtiment B"] };
+    const c3 = { ...blankClient(), nom: "MR Les Jours Heureux", type: "Maison de repos", adresse: "Lodelinsart" };
+    save.clients([c1, c2, c3]);
+    save.inters([
+      { ...blankInter(), clientId: c1.id, siteNom: "Charleroi", nuisible: "Cafards / Blattes", type: "Curatif", statut: "Réalisée", date: today(), produits: "Bugster EC", suiviRequis: true, prochaineDate: today() },
+      { ...blankInter(), clientId: c2.id, nuisible: "Rats / Souris", type: "Préventif", statut: "Planifiée", date: today() },
+    ]);
+    save.contrats([
+      { ...blankContrat(), clientId: c1.id, niveau: "Premium", frequence: "Mensuel", prixHT: 120 },
+      { ...blankContrat(), clientId: c3.id, niveau: "Confort", frequence: "Trimestriel", prixHT: 180 },
+    ]);
+    save.stations([
+      { ...blankStation(), clientId: c1.id, siteNom: "Charleroi", numero: "01", emplacement: "Cuisine", releves: [{ date: today(), activite: "Traces", consommation: "20", action: "Remplacement appât" }] },
+    ]);
+    setMsg("Données d'exemple chargées. Explore les onglets, puis remets à zéro quand tu veux.");
+  };
+
+  const counts = `${clients.length} clients · ${inters.length} interventions · ${contrats.length} contrats · ${stations.length} postes`;
+  return (
+    <>
+      <h3 className="font-bold mb-3" style={{ color: C.navy, fontSize: 18, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Sauvegarde des données</h3>
+      <Card style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 13, color: C.muted, fontWeight: 600, marginBottom: 10 }}>{counts}</div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="dark" onClick={exportData}><Download size={15} /> Exporter une sauvegarde</Button>
+          <Button variant="ghost" onClick={importData}><Upload size={15} /> Restaurer depuis le texte</Button>
+          <Button variant="ghost" onClick={loadDemo}>Charger un exemple</Button>
+          <Button variant="danger" onClick={reset}><RotateCcw size={15} /> Tout effacer</Button>
+        </div>
+      </Card>
+      {msg && <Card style={{ marginBottom: 14, borderColor: C.gold, background: C.gold + "12" }}><p style={{ fontSize: 13.5, color: C.text }}>{msg}</p></Card>}
+      <Field label="Sauvegarde JSON (copier pour archiver, ou coller pour restaurer)">
+        <TextArea value={txt} onChange={(e) => setTxt(e.target.value)} style={{ minHeight: 200, fontFamily: "monospace", fontSize: 12 }} placeholder="La sauvegarde apparaîtra ici…" />
+      </Field>
+      <p style={{ fontSize: 11.5, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>Tes données sont enregistrées automatiquement dans ton navigateur et restent disponibles d'une session à l'autre. Exporte régulièrement une sauvegarde pour ne rien perdre.</p>
+    </>
+  );
+}
+
+
+createRoot(document.getElementById("root")).render(<App />);
+
+</script>
+</body>
+</html>
