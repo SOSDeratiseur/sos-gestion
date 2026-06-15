@@ -67,6 +67,7 @@ const TENDANCES = ["Stable","Hausse","Baisse"];
 const CONSO = ["0","¼","½","¾","Totale"];
 const ETAT_POSTE = ["RAS","Consommation","Poste dégradé","Inaccessible","Remplacé","Nouveau"];
 const EQUIP_CODES = ["RI - rodonticide intérieur","RE - rodonticide extérieur","MC - piège mécanique","G - glu","DEIV - détecteur insectes","PH - piège phéromone"];
+const APP_VERSION = "15 juin 2026 · 12h — photos PDF proportionnées";
 const ACTIVITES = ["RAS","Traces","Activité faible","Activité forte","Capture"];
 const HACCP = ["Local accessible et propre","Postes d'appâtage intègres","Aucune denrée exposée à proximité","Traçabilité produits à jour","Recommandations remises au client"];
 
@@ -1654,6 +1655,7 @@ function DataModule({ clients, inters, contrats, stations, save }) {
         <TextArea value={txt} onChange={(e) => setTxt(e.target.value)} style={{ minHeight: 200, fontFamily: "monospace", fontSize: 12 }} placeholder="La sauvegarde apparaîtra ici…" />
       </Field>
       <p style={{ fontSize: 11.5, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>Tes données sont enregistrées automatiquement dans ton navigateur et restent disponibles d'une session à l'autre. Exporte régulièrement une sauvegarde pour ne rien perdre.</p>
+      <p style={{ fontSize: 11, color: C.muted, marginTop: 16, textAlign: "center", opacity: 0.8 }}>SOS Gestion · version {APP_VERSION}</p>
     </>
   );
 }
