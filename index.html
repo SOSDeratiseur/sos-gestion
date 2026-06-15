@@ -785,11 +785,21 @@ async function buildIpmPdf(report, client, s, contrat) {
     const map = await signedUrls(phs.map((p) => p.path));
     sec("Photos");
     const cw = (W - 2 * M - 6) / 2, ch = 50;
+    const imgSize = (d) => new Promise((rs) => { const im = new Image(); im.onload = () => rs({ w: im.naturalWidth || cw, h: im.naturalHeight || ch }); im.onerror = () => rs({ w: cw, h: ch }); im.src = d; });
     for (let i = 0; i < phs.length; i++) {
       if (i % 2 === 0) ensure(ch + 4);
       const url = map[phs[i].path]; const x = M + (i % 2) * (cw + 6);
       if (url) {
-        try { const res = await fetch(url); const blob = await res.blob(); const dataUrl = await new Promise((rs) => { const fr = new FileReader(); fr.onload = () => rs(fr.result); fr.readAsDataURL(blob); }); doc.addImage(dataUrl, "JPEG", x, y, cw, ch); doc.setDrawColor(210); doc.rect(x, y, cw, ch); } catch (e) {}
+        try {
+          const res = await fetch(url); const blob = await res.blob();
+          const dataUrl = await new Promise((rs) => { const fr = new FileReader(); fr.onload = () => rs(fr.result); fr.readAsDataURL(blob); });
+          const { w, h } = await imgSize(dataUrl);
+          const sc = Math.min(cw / w, ch / h), dw = w * sc, dh = h * sc;
+          const ox = x + (cw - dw) / 2, oy = y + (ch - dh) / 2;
+          doc.setFillColor(244, 244, 244); doc.rect(x, y, cw, ch, "F");
+          doc.addImage(dataUrl, "JPEG", ox, oy, dw, dh);
+          doc.setDrawColor(210); doc.setLineWidth(0.2); doc.rect(x, y, cw, ch);
+        } catch (e) {}
       }
       if (i % 2 === 1) y += ch + 4;
     }
@@ -1319,12 +1329,10 @@ function IPMEditor({ report, client, history, onClose, onSave }) {
       <SubHead>Photos</SubHead>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <span style={{ fontSize: 13, color: C.muted }}>Jointes au rapport (privées)</span>
-        <div className="flex gap-2">
-          <input type="file" accept="image/*" capture="environment" onChange={onPhoto} style={{ display: "none" }} id={`cam-${r.id}`} />
-          <input type="file" accept="image/*" multiple onChange={onPhoto} style={{ display: "none" }} id={`gal-${r.id}`} />
-          <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`cam-${r.id}`).click()} disabled={uploading}><Camera size={14} /> Photo</Button>
-          <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`gal-${r.id}`).click()} disabled={uploading}>{uploading ? "Envoi…" : <><ImageIcon size={14} /> Galerie / fichier</>}</Button>
-        </div>
+        <label>
+          <input type="file" accept="image/*" multiple onChange={onPhoto} style={{ display: "none" }} id={`ph-${r.id}`} />
+          <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`ph-${r.id}`).click()} disabled={uploading}>{uploading ? "Envoi…" : <><ImageIcon size={14} /> Ajouter une photo</>}</Button>
+        </label>
       </div>
       {(r.photos || []).length === 0 ? <p style={{ color: C.muted, fontSize: 13 }}>Aucune photo jointe.</p> :
         <div className="grid grid-cols-3 gap-2">{r.photos.map((ph) => (
