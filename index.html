@@ -25,7 +25,7 @@
 <body>
 <div id="root"></div>
 <script type="text/babel" data-type="module" data-presets="react">
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   LayoutDashboard, ClipboardList, Users, FileText, Activity, Database,
   Plus, Search, X, Check, Trash2, Pencil, Phone, Mail, MapPin, Calendar,
@@ -61,13 +61,53 @@ const ZONES = ["Cuisine / production","Stockage sec","Chambres froides","Zone d�
 const INDICES = ["Excréments","Traces de passage","Dégâts matériels","Bruits signalés","Captures"];
 const ACTIONS_VISITE = ["Contrôle des postes d'appâtage","Recharge / remplacement des appâts","Pose de nouveaux postes","Retrait de postes","Application insecticide","Pose / relevé de pièges","Nettoyage des postes","Conseil hygiène au client"];
 const POINTS_CRITIQUES = ["Trous / passages dans murs ou plinthes","Portes non étanches (bas de porte)","Déchets / poubelles mal gérés","Denrées stockées au sol","Végétation / encombrement périmètre","Points d'eau accessibles","Égouts / avaloirs non protégés","Zones difficiles d'accès"];
-const NUISIBLES_INFEST = ["Rats","Souris","Blattes / cafards","Fourmis","Mites alimentaires","Mouches / moucherons","Punaises de lit"];
+const NUISIBLES_INFEST = ["Rats","Souris","Blattes / cafards","Fourmis","Mites alimentaires","Mouches / moucherons","Punaises de lit","Guêpes / frelons","Puces","Poissons d'argent"];
+
+/* ---- choix contextuels : zones selon le lieu, indices/actions selon l'espèce ---- */
+const LIEUX = {
+  "Restaurant / HORECA": ["Cuisine / production","Plonge","Réserve / stockage sec","Chambres froides","Salle / accueil","Bar / comptoir","Sanitaires","Vestiaires personnel","Zone déchets / poubelles","Cave / sous-sol","Quai de livraison","Extérieur / terrasse"],
+  "Résidentiel / habitation": ["Cuisine","Salon / séjour","Chambres","Salle de bain","WC","Buanderie","Cave / sous-sol","Grenier / combles","Garage","Abri de jardin","Jardin / extérieur"],
+  "Immeuble / copropriété": ["Appartements / logements","Hall d'entrée","Cage d'escalier / paliers","Caves privatives","Local poubelles","Parking souterrain","Chaufferie / local technique","Gaines techniques","Ascenseur","Combles","Abords / jardins"],
+  "Agroalimentaire / production": ["Zone de production","Conditionnement / emballage","Matières premières","Stockage produits finis","Chambres froides","Quai de réception / expédition","Laboratoire","Vestiaires","Réfectoire","Zone déchets","Local technique","Périmètre extérieur"],
+  "Entrepôt / logistique": ["Quais de chargement","Zones de stockage / racks","Zone de préparation","Bureaux","Vestiaires","Réfectoire","Local déchets","Local technique","Périmètre extérieur","Parking"],
+  "Maison de repos / soins": ["Cuisine centrale","Réfectoire / salle à manger","Chambres résidents","Office d'étage","Lingerie / buanderie","Sanitaires","Réserves","Pharmacie","Zone déchets","Cave / sous-sol","Jardin / extérieur"],
+  "Commerce / magasin": ["Surface de vente","Réserve","Chambre froide","Caisse / accueil","Sanitaires","Bureau","Zone déchets","Quai de livraison","Cave / sous-sol"],
+  "Bureaux / tertiaire": ["Bureaux","Kitchenette / cafétéria","Salles de réunion","Sanitaires","Archives","Local technique","Cave / sous-sol","Extérieur / parking"],
+  "École / collectivité": ["Classes","Cuisine / cantine","Réfectoire","Sanitaires","Salle de sport / vestiaires","Réserves","Cour / extérieur","Cave / sous-sol"],
+  "Extérieur / espaces verts": ["Périmètre bâtiment","Égouts / avaloirs","Haies / végétation","Compost","Abris / dépendances","Berges / points d'eau"],
+};
+const LIEU_NAMES = Object.keys(LIEUX);
+const CLIENT_TO_LIEU = { Particulier: "Résidentiel / habitation", HORECA: "Restaurant / HORECA", "Syndic / Copropriété": "Immeuble / copropriété", Logistique: "Entrepôt / logistique", "Maison de repos": "Maison de repos / soins", Agroalimentaire: "Agroalimentaire / production", Commerce: "Commerce / magasin" };
+const ESPECE_GROUPE = { "Rats": "rongeurs", "Souris": "rongeurs", "Blattes / cafards": "rampants", "Fourmis": "fourmis", "Poissons d'argent": "rampants", "Punaises de lit": "punaises", "Puces": "puces", "Mites alimentaires": "volants", "Mouches / moucherons": "volants", "Guêpes / frelons": "guepes" };
+const INDICES_PAR = {
+  rongeurs: ["Excréments / crottes","Traces de passage / frottis","Rongements / dégâts matériels","Nids / matériaux de nid","Terriers","Bruits signalés","Consommation d'appâts","Captures"],
+  rampants: ["Insectes vivants observés","Insectes morts","Mues / exuvies","Oothèques (œufs)","Déjections","Captures sur glu"],
+  fourmis: ["Colonnes / pistes","Nid localisé","Fourmis ailées","Monticules de sciure"],
+  punaises: ["Insectes vivants observés","Taches de sang / déjections","Mues / exuvies","Œufs","Piqûres signalées"],
+  puces: ["Puces vivantes observées","Piqûres signalées","Animaux domestiques présents"],
+  volants: ["Insectes vivants observés","Larves","Toiles / cocons","Denrées contaminées","Captures (DEIV / pièges)"],
+  guepes: ["Nid localisé","Allées et venues","Piqûres signalées"],
+};
+const ACTIONS_COMMUNES = ["Inspection complète","Conseil hygiène au client"];
+const ACTIONS_PAR = {
+  rongeurs: ["Contrôle des postes d'appâtage","Recharge / remplacement des appâts","Pose de nouveaux postes","Retrait de postes","Nettoyage des postes","Pose / relevé de pièges mécaniques","Rebouchage / proofing"],
+  rampants: ["Gel insecticide","Pulvérisation insecticide","Poudrage","Pose / relevé de pièges glu"],
+  fourmis: ["Gel / appât fourmis","Pulvérisation insecticide","Traitement du nid"],
+  punaises: ["Traitement vapeur","Pulvérisation insecticide","Poudrage (terre de diatomée)","Housses anti-punaises"],
+  puces: ["Pulvérisation insecticide","Conseil traitement animaux"],
+  volants: ["Pose / contrôle DEIV","Pièges à phéromones","Pulvérisation insecticide","Retrait denrées contaminées"],
+  guepes: ["Destruction du nid","Poudrage du nid","Retrait du nid"],
+};
+const uniq = (a) => [...new Set(a)];
+const groupesOf = (esp) => uniq((esp || []).map((e) => ESPECE_GROUPE[e]).filter(Boolean));
+const zonesFor = (lieux, sel = []) => { const b = (lieux || []).flatMap((l) => LIEUX[l] || []); return uniq([...(b.length ? b : ZONES), ...sel]); };
+const indicesFor = (esp, sel = []) => { const g = groupesOf(esp); const b = g.flatMap((x) => INDICES_PAR[x]); return uniq([...(b.length ? b : INDICES), ...sel]); };
+const actionsFor = (esp, sel = []) => { const g = groupesOf(esp); const b = g.flatMap((x) => ACTIONS_PAR[x]); return uniq([...(b.length ? [...b, ...ACTIONS_COMMUNES] : ACTIONS_VISITE), ...sel]); };
 const NIVEAUX_INFEST = ["Absent","Faible","Moyen","Fort"];
 const TENDANCES = ["Stable","Hausse","Baisse"];
 const CONSO = ["0","¼","½","¾","Totale"];
 const ETAT_POSTE = ["RAS","Consommation","Poste dégradé","Inaccessible","Remplacé","Nouveau"];
 const EQUIP_CODES = ["RI - rodonticide intérieur","RE - rodonticide extérieur","MC - piège mécanique","G - glu","DEIV - détecteur insectes","PH - piège phéromone"];
-const APP_VERSION = "15 juin 2026 · 12h — photos PDF proportionnées";
 const ACTIVITES = ["RAS","Traces","Activité faible","Activité forte","Capture"];
 const HACCP = ["Local accessible et propre","Postes d'appâtage intègres","Aucune denrée exposée à proximité","Traçabilité produits à jour","Recommandations remises au client"];
 
@@ -130,7 +170,8 @@ const blankIpm = (clientId) => ({
   id: uid(), clientId, date: today(), siteNom: "",
   heureArrivee: "", heureDepart: "", technicien: "", numRapport: "",
   typeVisite: "Visite contractuelle",
-  zones: [], activiteDetectee: "Non", especes: "", indices: [], constat: "",
+  lieux: [], zones: [], activiteDetectee: "Non", especesList: [], especes: "", indices: [], constat: "",
+  signatureTech: "", signatureClient: "", signataireNom: "", clientAbsent: false,
   actions: [], equipements: [], produits: [], infestation: {}, pointsCritiques: [],
   observations: "", recommandations: [], suiviPrecedent: "Sans objet",
   sousControle: "Oui", visiteSupp: "Non", prochainPassage: "", remarquesClient: "", photos: [],
@@ -187,16 +228,68 @@ const inputStyle = { background: "#fff", border: `1px solid ${C.line}`, color: C
 const TextInput = (p) => <input {...p} style={{ ...inputStyle, ...(p.style || {}) }} />;
 const Select = ({ children, ...p }) => <select {...p} style={inputStyle}>{children}</select>;
 const TextArea = (p) => <textarea {...p} style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} />;
-function CheckGroup({ options, value, onChange, cols = 1 }) {
+function CheckGroup({ options, value, onChange }) {
   const v = value || [];
   const toggle = (o) => onChange(v.includes(o) ? v.filter((x) => x !== o) : [...v, o]);
   return (
-    <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${cols},1fr)` }}>
-      {options.map((o) => (
-        <label key={o} className="flex items-center gap-2" style={{ color: C.text, fontSize: 13 }}>
-          <input type="checkbox" checked={v.includes(o)} onChange={() => toggle(o)} /> {o}
-        </label>
-      ))}
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => {
+        const on = v.includes(o);
+        return (
+          <button type="button" key={o} onClick={() => toggle(o)} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 11px", borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: "pointer", border: `1px solid ${on ? C.gold : C.line}`, background: on ? C.gold : "#fff", color: on ? "#fff" : C.text, lineHeight: 1.2, textAlign: "left" }}>
+            {on && <Check size={13} />}{o}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+function AddChip({ placeholder, onAdd }) {
+  const [t, setT] = useState("");
+  const go = () => { if (t.trim()) { onAdd(t.trim()); setT(""); } };
+  return (
+    <div className="flex gap-2" style={{ marginTop: 6 }}>
+      <TextInput value={t} onChange={(e) => setT(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} placeholder={placeholder} style={{ padding: "7px 10px", fontSize: 13 }} />
+      <Button variant="ghost" style={{ padding: "6px 10px" }} onClick={go}><Plus size={14} /></Button>
+    </div>
+  );
+}
+
+function SignaturePad({ value, onChange, height = 150 }) {
+  const ref = useRef(null);
+  const drawing = useRef(false);
+  const last = useRef(null);
+  const size = useRef({ w: 0, h: 0 });
+  useEffect(() => {
+    const cv = ref.current; if (!cv) return;
+    const ratio = window.devicePixelRatio || 1;
+    const w = cv.offsetWidth, h = cv.offsetHeight; size.current = { w, h };
+    cv.width = w * ratio; cv.height = h * ratio;
+    const ctx = cv.getContext("2d"); ctx.scale(ratio, ratio);
+    ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = C.navy;
+    if (value) { const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, w, h); img.src = value; }
+  }, []);
+  const pos = (e) => { const r = ref.current.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const down = (e) => { e.preventDefault(); try { ref.current.setPointerCapture(e.pointerId); } catch (_) {} drawing.current = true; last.current = pos(e); const ctx = ref.current.getContext("2d"); ctx.beginPath(); ctx.arc(last.current.x, last.current.y, 1, 0, Math.PI * 2); ctx.fillStyle = C.navy; ctx.fill(); };
+  const move = (e) => { if (!drawing.current) return; e.preventDefault(); const p = pos(e); const ctx = ref.current.getContext("2d"); ctx.beginPath(); ctx.moveTo(last.current.x, last.current.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last.current = p; };
+  const up = () => {
+    if (!drawing.current) return; drawing.current = false;
+    const { w, h } = size.current; const out = document.createElement("canvas"); out.width = w; out.height = h;
+    const o = out.getContext("2d"); o.fillStyle = "#fff"; o.fillRect(0, 0, w, h); o.drawImage(ref.current, 0, 0, w, h);
+    onChange(out.toDataURL("image/png"));
+  };
+  const clear = () => { const cv = ref.current; cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); onChange(""); };
+  return (
+    <div>
+      <div style={{ position: "relative" }}>
+        <canvas ref={ref} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} onPointerCancel={up}
+          style={{ width: "100%", height, background: "#fff", border: `1.5px dashed ${value ? C.gold : C.line}`, borderRadius: 12, touchAction: "none", cursor: "crosshair", display: "block" }} />
+        {!value && <span style={{ position: "absolute", left: 0, right: 0, top: "50%", transform: "translateY(-50%)", textAlign: "center", color: "#C5BCA9", fontSize: 13, pointerEvents: "none" }}>Signer ici avec le doigt</span>}
+      </div>
+      <div className="flex justify-between items-center" style={{ marginTop: 5 }}>
+        <span style={{ fontSize: 12, color: value ? C.green : C.muted, fontWeight: 600 }}>{value ? "✓ Signé" : "Non signé"}</span>
+        <button type="button" onClick={clear} style={{ background: "none", border: "none", color: C.red, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Effacer</button>
+      </div>
     </div>
   );
 }
@@ -396,7 +489,7 @@ function App() {
               {view === "clients" && <Clients {...{ clients, save, inters, settings, contrats, ipm }} />}
               {view === "contrats" && <Contrats {...{ contrats, clients, save, clientName, inters, saveMany }} />}
               {view === "stations" && <Tendances {...{ ipm, clients }} />}
-              {view === "data" && <><CompanySettings settings={settings} onSave={saveSettings} /><DataModule {...{ clients, inters, contrats, stations, save }} /></>}
+              {view === "data" && <><CompanySettings settings={settings} onSave={saveSettings} /><DataModule {...{ clients, inters, contrats, stations, ipm, save }} /></>}
             </>}
           </div>
         </main>
@@ -621,8 +714,10 @@ async function buildFiche(it, client, s) {
   });
   if (it.suiviRequis && it.prochaineDate) { y += 2; label("Prochain passage"); doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(40, 42, 54); doc.text(fmtDate(it.prochaineDate), 14, y); y += 6; }
   y += 10; doc.setDrawColor(190); doc.setLineWidth(0.3); doc.setFontSize(9); doc.setTextColor(110, 114, 128);
+  if (it.signatureClient && y < 245) { try { doc.addImage(it.signatureClient, "PNG", 146, y - 24, 50, 22); } catch (e) {} }
   doc.text("Signature opérateur", 14, y); doc.line(52, y, 96, y);
   doc.text("Signature client", 112, y); doc.line(146, y, 196, y);
+  if (it.signataireNom) { doc.setFontSize(8); doc.text(it.signataireNom, 146, y + 4.5); }
   // pied de page
   const fy = 286; doc.setDrawColor(181, 134, 58); doc.setLineWidth(0.5); doc.line(14, fy - 4, W - 14, fy - 4);
   doc.setFontSize(7.5); doc.setTextColor(110, 114, 128);
@@ -723,16 +818,19 @@ async function buildIpmPdf(report, client, s, contrat) {
   sec("Informations sur la visite");
   kv("Date", fmtDate(report.date), M, 50); kv("Type", report.typeVisite, W / 2, 60); y += 6;
   if (report.siteNom) { kv("Site", report.siteNom, M, W - 2 * M - 30); y += 6; }
+  if ((report.lieux || []).length) { const nl = kv("Type de lieu", report.lieux.join(", "), M, W - 2 * M - 30); y += nl * 4.5 + 1.5; }
   kv("Arrivée", report.heureArrivee, M, 40); kv("Départ", report.heureDepart, W / 2, 40); y += 6;
   kv("Technicien", report.technicien, M, 60); kv("N° rapport", report.numRapport, W / 2, 50); y += 9;
 
-  sec("Zones inspectées"); checks(ZONES, report.zones);
+  sec("Zones / pièces inspectées"); checks(zonesFor(report.lieux, report.zones), report.zones);
   sec("Constat général");
-  kv("Activité détectée", report.activiteDetectee, M, 30); kv("Espèces", report.especes, W / 2, 60); y += 7;
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(26, 31, 46); doc.text("Indices :", M, y); y += 5; checks(INDICES, report.indices);
+  const espTxt = [...(report.especesList || []), report.especes].filter(Boolean).join(", ");
+  kv("Activité détectée", report.activiteDetectee, M, 30); y += 6;
+  { const ne = kv("Nuisibles", espTxt, M, W - 2 * M - 30); y += ne * 4.5 + 2; }
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(26, 31, 46); doc.text("Indices :", M, y); y += 5; checks(indicesFor(report.especesList, report.indices), report.indices);
   if (report.constat) { ensure(12); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54); const l = doc.splitTextToSize(report.constat, W - 2 * M); doc.text(l, M, y); y += l.length * 4.5 + 3; }
 
-  sec("Actions réalisées"); checks(ACTIONS_VISITE, report.actions);
+  sec("Actions réalisées"); checks(actionsFor(report.especesList, report.actions), report.actions);
 
   sec("Relevé des postes & pièges");
   doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(95, 95, 95);
@@ -775,37 +873,41 @@ async function buildIpmPdf(report, client, s, contrat) {
   kv("Sous contrôle", report.sousControle, M, 20); kv("Visite suppl.", report.visiteSupp, W / 2, 20); y += 6;
   kv("Prochain passage", report.prochainPassage ? fmtDate(report.prochainPassage) : "—", M, 50); y += 6;
   if (report.remarquesClient) { doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); const l = doc.splitTextToSize("Remarques client : " + report.remarquesClient, W - 2 * M); doc.text(l, M, y); y += l.length * 4.5; }
-  y += 6; ensure(20);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54);
-  doc.text("Technicien : " + (report.technicien || ""), M, y); doc.text("Signature client :", W / 2, y);
-  doc.setDrawColor(190); doc.line(M + 26, y, W / 2 - 8, y); doc.line(W / 2 + 26, y, W - M, y); y += 10;
+  y += 4;
 
-  // Photos
+  // Photos (avant les signatures, comme sur le rapport de référence)
   const phs = report.photos || [];
   if (phs.length) {
     const map = await signedUrls(phs.map((p) => p.path));
     sec("Photos");
     const cw = (W - 2 * M - 6) / 2, ch = 50;
-    const imgSize = (d) => new Promise((rs) => { const im = new Image(); im.onload = () => rs({ w: im.naturalWidth || cw, h: im.naturalHeight || ch }); im.onerror = () => rs({ w: cw, h: ch }); im.src = d; });
     for (let i = 0; i < phs.length; i++) {
       if (i % 2 === 0) ensure(ch + 4);
       const url = map[phs[i].path]; const x = M + (i % 2) * (cw + 6);
       if (url) {
-        try {
-          const res = await fetch(url); const blob = await res.blob();
-          const dataUrl = await new Promise((rs) => { const fr = new FileReader(); fr.onload = () => rs(fr.result); fr.readAsDataURL(blob); });
-          const { w, h } = await imgSize(dataUrl);
-          const sc = Math.min(cw / w, ch / h), dw = w * sc, dh = h * sc;
-          const ox = x + (cw - dw) / 2, oy = y + (ch - dh) / 2;
-          doc.setFillColor(244, 244, 244); doc.rect(x, y, cw, ch, "F");
-          doc.addImage(dataUrl, "JPEG", ox, oy, dw, dh);
-          doc.setDrawColor(210); doc.setLineWidth(0.2); doc.rect(x, y, cw, ch);
-        } catch (e) {}
+        try { const res = await fetch(url); const blob = await res.blob(); const dataUrl = await new Promise((rs) => { const fr = new FileReader(); fr.onload = () => rs(fr.result); fr.readAsDataURL(blob); }); doc.addImage(dataUrl, "JPEG", x, y, cw, ch); doc.setDrawColor(210); doc.rect(x, y, cw, ch); } catch (e) {}
       }
       if (i % 2 === 1) y += ch + 4;
     }
     if (phs.length % 2 === 1) y += ch + 4;
   }
+
+  // Signatures
+  const bh = 40, bw = (W - 2 * M - 8) / 2;
+  ensure(bh + 22); sec("Signatures");
+  const sigBox = (x, title, img, note) => {
+    doc.setDrawColor(210); doc.setLineWidth(0.3); doc.roundedRect(x, y, bw, bh, 2.5, 2.5, "S");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(110, 114, 128);
+    doc.text(doc.splitTextToSize(title, bw - 6)[0], x + 3, y + 5);
+    if (img) { try { const pr = doc.getImageProperties(img); const mw = bw - 8, mh = bh - 14; const sc = Math.min(mw / pr.width, mh / pr.height); const iw = pr.width * sc, ih = pr.height * sc; doc.addImage(img, "PNG", x + 4 + (mw - iw) / 2, y + 8 + (mh - ih) / 2, iw, ih); } catch (e) {} }
+    else if (note) { doc.setFont("helvetica", "italic"); doc.setFontSize(8.5); doc.text(note, x + bw / 2, y + bh / 2 + 2, { align: "center" }); }
+    doc.setDrawColor(190); doc.line(x + 4, y + bh - 5, x + bw - 4, y + bh - 5);
+  };
+  sigBox(M, "Technicien" + (report.technicien ? " : " + report.technicien : ""), report.signatureTech);
+  sigBox(M + bw + 8, "Client" + (report.signataireNom ? " : " + report.signataireNom : ""), report.clientAbsent ? "" : report.signatureClient, report.clientAbsent ? "Client absent — non signé" : "");
+  y += bh + 4;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(110, 114, 128);
+  doc.text("Signé le " + fmtDate(report.date) + (report.heureDepart ? " à " + report.heureDepart : ""), M, y);
 
   footer();
   return doc.output("bloburl");
@@ -946,7 +1048,7 @@ function Interventions({ inters, clients, save, clientName, settings, ipm }) {
         <div className="flex flex-col gap-2.5">{rows.map((i) => i.kind === "ipm" ? (
           <Card key={i.id} style={{ padding: 14 }}>
             <div className="flex justify-between items-start gap-3">
-              <div style={{ minWidth: 0, cursor: "pointer" }} onClick={() => setIpmEditing({ rep: (ipm || []).find((x) => x.id === i.id) || i, clientId: i.clientId })}>
+              <div style={{ minWidth: 0 }}>
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className="font-bold" style={{ color: C.navy }}>{clientName(i.clientId)}</span>
                   <Badge color={C.navy}>IPM</Badge>
@@ -964,7 +1066,7 @@ function Interventions({ inters, clients, save, clientName, settings, ipm }) {
         ) : (
           <Card key={i.id} style={{ padding: 14 }}>
             <div className="flex justify-between items-start gap-3">
-              <div style={{ minWidth: 0, cursor: "pointer" }} onClick={() => setModal(i)}>
+              <div style={{ minWidth: 0 }}>
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className="font-bold" style={{ color: C.navy }}>{clientName(i.clientId)}</span>
                   <Badge color={statutColor(i.statut)}>{i.statut}</Badge>
@@ -1032,6 +1134,9 @@ function InterModal({ it, clients, onClose, onSave }) {
             <input type="checkbox" checked={f.haccp.includes(h)} onChange={() => toggleHaccp(h)} /> {h}
           </label>))}</div>
       </div>
+      <SubHead>Signature du client</SubHead>
+      <TextInput value={f.signataireNom || ""} onChange={(e) => set("signataireNom", e.target.value)} placeholder="Nom du signataire" />
+      <SignaturePad value={f.signatureClient || ""} onChange={(v) => set("signatureClient", v)} />
     </Modal>
   );
 }
@@ -1179,10 +1284,18 @@ function ClientDetail({ client, inters, contrats, settings, ipm, saveIpm, saveIn
 function IPMEditor({ report, client, history, onClose, onSave }) {
   const [r, setR] = useState(() => {
     const merged = { ...blankIpm(report.clientId), ...report };
-    ["zones", "indices", "actions", "pointsCritiques", "equipements", "produits", "recommandations", "photos"].forEach((k) => { if (!Array.isArray(merged[k])) merged[k] = []; });
+    ["lieux", "especesList", "zones", "indices", "actions", "pointsCritiques", "equipements", "produits", "recommandations", "photos"].forEach((k) => { if (!Array.isArray(merged[k])) merged[k] = []; });
     if (!merged.infestation || typeof merged.infestation !== "object") merged.infestation = {};
+    if (!merged.lieux.length && CLIENT_TO_LIEU[client?.type]) merged.lieux = [CLIENT_TO_LIEU[client.type]];
+    if (!merged.signataireNom && client?.contact) merged.signataireNom = client.contact;
     return merged;
   });
+  const [showAllInfest, setShowAllInfest] = useState(false);
+  const zoneOpts = zonesFor(r.lieux, r.zones);
+  const indiceOpts = indicesFor(r.especesList, r.indices);
+  const actionOpts = actionsFor(r.especesList, r.actions);
+  const infestRows = (!showAllInfest && r.especesList.length) ? NUISIBLES_INFEST.filter((n) => r.especesList.includes(n) || ((r.infestation[n] || {}).niveau && r.infestation[n].niveau !== "Absent")) : NUISIBLES_INFEST;
+  const hint = (t) => <p style={{ fontSize: 12, color: C.muted, marginTop: -2 }}>{t}</p>;
   const [uploading, setUploading] = useState(false);
   const [urls, setUrls] = useState({});
   useEffect(() => {
@@ -1199,7 +1312,7 @@ function IPMEditor({ report, client, history, onClose, onSave }) {
   const reprise = () => {
     const src = (r.siteNom ? others.find((h) => h.siteNom === r.siteNom) : null) || others[0];
     if (!src) return;
-    setR((p) => ({ ...p, equipements: (src.equipements || []).map((e) => ({ ...e, id: uid(), consommation: "0", etat: "RAS", action: "" })), produits: (src.produits || []).map((x) => ({ ...x, id: uid() })) }));
+    setR((p) => ({ ...p, lieux: src.lieux?.length ? src.lieux : p.lieux, zones: p.zones.length ? p.zones : (src.zones || []), especesList: p.especesList.length ? p.especesList : (src.especesList || []), equipements: (src.equipements || []).map((e) => ({ ...e, id: uid(), consommation: "0", etat: "RAS", action: "" })), produits: (src.produits || []).map((x) => ({ ...x, id: uid() })) }));
   };
   const onPhoto = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -1227,19 +1340,26 @@ function IPMEditor({ report, client, history, onClose, onSave }) {
         <Field label="N° de rapport"><TextInput value={r.numRapport} onChange={(e) => set("numRapport", e.target.value)} /></Field>
       </div>
 
-      <SubHead>Zones inspectées</SubHead>
-      <CheckGroup options={ZONES} value={r.zones} onChange={(v) => set("zones", v)} cols={2} />
+      <SubHead>Type de lieu</SubHead>
+      {hint("Coche le ou les types de lieu : la liste des pièces s'adapte automatiquement.")}
+      <CheckGroup options={LIEU_NAMES} value={r.lieux} onChange={(v) => set("lieux", v)} />
+
+      <SubHead>Zones / pièces inspectées</SubHead>
+      {!r.lieux.length && hint("Aucun type de lieu choisi — liste générale affichée.")}
+      <CheckGroup options={zoneOpts} value={r.zones} onChange={(v) => set("zones", v)} />
+      <AddChip placeholder="Autre pièce (ex. Appartement 2e étage)…" onAdd={(z) => set("zones", uniq([...r.zones, z]))} />
 
       <SubHead>Constat général</SubHead>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Activité détectée"><Select value={r.activiteDetectee} onChange={(e) => set("activiteDetectee", e.target.value)}><option>Non</option><option>Oui</option></Select></Field>
-        <Field label="Espèce(s)"><TextInput value={r.especes} onChange={(e) => set("especes", e.target.value)} /></Field>
-      </div>
-      <div><div style={{ fontSize: 13, fontWeight: 600, color: C.muted, marginBottom: 6 }}>Indices observés</div><CheckGroup options={INDICES} value={r.indices} onChange={(v) => set("indices", v)} cols={2} /></div>
+      <Field label="Activité détectée"><Select value={r.activiteDetectee} onChange={(e) => set("activiteDetectee", e.target.value)}><option>Non</option><option>Oui</option></Select></Field>
+      <div><div style={{ fontSize: 13, fontWeight: 600, color: C.muted, marginBottom: 6 }}>Nuisible(s) concerné(s)</div>
+        <CheckGroup options={NUISIBLES_INFEST} value={r.especesList} onChange={(v) => set("especesList", v)} /></div>
+      <Field label="Précision espèce / autre"><TextInput value={r.especes} onChange={(e) => set("especes", e.target.value)} placeholder="Ex. Blatte germanique, surmulot…" /></Field>
+      <div><div style={{ fontSize: 13, fontWeight: 600, color: C.muted, marginBottom: 6 }}>Indices observés {r.especesList.length ? "" : "(choisis un nuisible pour des indices ciblés)"}</div><CheckGroup options={indiceOpts} value={r.indices} onChange={(v) => set("indices", v)} /></div>
       <Field label="Description"><TextArea value={r.constat} onChange={(e) => set("constat", e.target.value)} /></Field>
 
       <SubHead>Actions réalisées</SubHead>
-      <CheckGroup options={ACTIONS_VISITE} value={r.actions} onChange={(v) => set("actions", v)} cols={2} />
+      <CheckGroup options={actionOpts} value={r.actions} onChange={(v) => set("actions", v)} />
+      <AddChip placeholder="Autre action…" onAdd={(a) => set("actions", uniq([...r.actions, a]))} />
 
       <div className="flex items-center justify-between" style={{ marginTop: 8 }}>
         <SubHead>Relevé des postes & pièges</SubHead>
@@ -1288,7 +1408,7 @@ function IPMEditor({ report, client, history, onClose, onSave }) {
 
       <SubHead>Niveau d'infestation</SubHead>
       <div className="flex flex-col gap-1.5">
-        {NUISIBLES_INFEST.map((n) => (
+        {infestRows.map((n) => (
           <div key={n} className="flex items-center gap-2">
             <span style={{ flex: 1, fontSize: 13, color: C.text }}>{n}</span>
             <Select value={(r.infestation[n] || {}).niveau || "Absent"} onChange={(e) => setInfest(n, "niveau", e.target.value)} style={{ ...inputStyle, width: "auto" }}>{NIVEAUX_INFEST.map((x) => <option key={x}>{x}</option>)}</Select>
@@ -1296,6 +1416,7 @@ function IPMEditor({ report, client, history, onClose, onSave }) {
           </div>
         ))}
       </div>
+      {r.especesList.length > 0 && <button type="button" onClick={() => setShowAllInfest(!showAllInfest)} style={{ alignSelf: "flex-start", background: "none", border: "none", color: C.gold, fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0 }}>{showAllInfest ? "Afficher seulement les nuisibles cochés" : "Afficher tous les nuisibles"}</button>}
 
       <SubHead>Points critiques relevés</SubHead>
       <CheckGroup options={POINTS_CRITIQUES} value={r.pointsCritiques} onChange={(v) => set("pointsCritiques", v)} cols={1} />
@@ -1330,10 +1451,12 @@ function IPMEditor({ report, client, history, onClose, onSave }) {
       <SubHead>Photos</SubHead>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <span style={{ fontSize: 13, color: C.muted }}>Jointes au rapport (privées)</span>
-        <label>
-          <input type="file" accept="image/*" multiple onChange={onPhoto} style={{ display: "none" }} id={`ph-${r.id}`} />
-          <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`ph-${r.id}`).click()} disabled={uploading}>{uploading ? "Envoi…" : <><ImageIcon size={14} /> Ajouter une photo</>}</Button>
-        </label>
+        <div className="flex gap-2">
+          <input type="file" accept="image/*" capture="environment" onChange={onPhoto} style={{ display: "none" }} id={`cam-${r.id}`} />
+          <input type="file" accept="image/*" multiple onChange={onPhoto} style={{ display: "none" }} id={`gal-${r.id}`} />
+          <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`cam-${r.id}`).click()} disabled={uploading}><Camera size={14} /> Photo</Button>
+          <Button variant="ghost" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => document.getElementById(`gal-${r.id}`).click()} disabled={uploading}>{uploading ? "Envoi…" : <><ImageIcon size={14} /> Galerie / fichier</>}</Button>
+        </div>
       </div>
       {(r.photos || []).length === 0 ? <p style={{ color: C.muted, fontSize: 13 }}>Aucune photo jointe.</p> :
         <div className="grid grid-cols-3 gap-2">{r.photos.map((ph) => (
@@ -1343,6 +1466,17 @@ function IPMEditor({ report, client, history, onClose, onSave }) {
             <button onClick={() => removePhoto(ph)} style={{ position: "absolute", top: 3, right: 3, background: "#000A", border: "none", borderRadius: 6, color: "#fff", cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}><X size={13} /></button>
           </div>))}
         </div>}
+
+      <SubHead>Signatures</SubHead>
+      <div style={{ fontSize: 13, fontWeight: 600, color: C.muted }}>Technicien{r.technicien ? ` : ${r.technicien}` : ""}</div>
+      <SignaturePad value={r.signatureTech} onChange={(v) => set("signatureTech", v)} height={120} />
+      <div style={{ fontSize: 13, fontWeight: 600, color: C.muted, marginTop: 6 }}>Client</div>
+      <TextInput value={r.signataireNom} onChange={(e) => set("signataireNom", e.target.value)} placeholder="Nom et fonction du signataire (ex. Romain, animateur)" />
+      <label className="flex items-center gap-2" style={{ fontSize: 13, color: C.text }}>
+        <input type="checkbox" checked={!!r.clientAbsent} onChange={(e) => set("clientAbsent", e.target.checked)} /> Client absent — rapport non signé
+      </label>
+      {!r.clientAbsent && <SignaturePad value={r.signatureClient} onChange={(v) => set("signatureClient", v)} />}
+      <p style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.4 }}>En signant, le client reconnaît le passage du technicien et la remise des recommandations.</p>
     </Modal>
   );
 }
@@ -1609,12 +1743,12 @@ function CompanySettings({ settings, onSave }) {
 }
 
 /* ----------------------------------------------------------- DATA / backup */
-function DataModule({ clients, inters, contrats, stations, save }) {
+function DataModule({ clients, inters, contrats, stations, ipm, save }) {
   const [txt, setTxt] = useState("");
   const [msg, setMsg] = useState("");
-  const exportData = () => { setTxt(JSON.stringify({ clients, inters, contrats, stations }, null, 2)); setMsg("Sauvegarde générée ci-dessous — copie-la dans un endroit sûr."); };
+  const exportData = () => { setTxt(JSON.stringify({ clients, inters, contrats, stations, ipm }, null, 2)); setMsg("Sauvegarde générée ci-dessous — copie-la dans un endroit sûr."); };
   const importData = () => {
-    try { const d = JSON.parse(txt); save.clients(d.clients || []); save.inters(d.inters || []); save.contrats(d.contrats || []); save.stations(d.stations || []); setMsg("Données restaurées ✓"); }
+    try { const d = JSON.parse(txt); save.clients(d.clients || []); save.inters(d.inters || []); save.contrats(d.contrats || []); save.stations(d.stations || []); if (d.ipm) save.ipm(d.ipm); setMsg("Données restaurées ✓"); }
     catch { setMsg("JSON invalide — vérifie le texte collé."); }
   };
   const reset = () => { if (confirm("Tout effacer ? Cette action est définitive.")) { save.clients([]); save.inters([]); save.contrats([]); save.stations([]); setTxt(""); setMsg("Toutes les données ont été effacées."); } };
@@ -1637,7 +1771,7 @@ function DataModule({ clients, inters, contrats, stations, save }) {
     setMsg("Données d'exemple chargées. Explore les onglets, puis remets à zéro quand tu veux.");
   };
 
-  const counts = `${clients.length} clients · ${inters.length} interventions · ${contrats.length} contrats · ${stations.length} postes`;
+  const counts = `${clients.length} clients · ${inters.length} interventions · ${(ipm || []).length} rapports IPM · ${contrats.length} contrats · ${stations.length} postes`;
   return (
     <>
       <h3 className="font-bold mb-3" style={{ color: C.navy, fontSize: 18, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Sauvegarde des données</h3>
@@ -1655,7 +1789,6 @@ function DataModule({ clients, inters, contrats, stations, save }) {
         <TextArea value={txt} onChange={(e) => setTxt(e.target.value)} style={{ minHeight: 200, fontFamily: "monospace", fontSize: 12 }} placeholder="La sauvegarde apparaîtra ici…" />
       </Field>
       <p style={{ fontSize: 11.5, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>Tes données sont enregistrées automatiquement dans ton navigateur et restent disponibles d'une session à l'autre. Exporte régulièrement une sauvegarde pour ne rien perdre.</p>
-      <p style={{ fontSize: 11, color: C.muted, marginTop: 16, textAlign: "center", opacity: 0.8 }}>SOS Gestion · version {APP_VERSION}</p>
     </>
   );
 }
