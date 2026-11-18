@@ -788,7 +788,7 @@ async function buildIpmPdf(report, client, s, contrat) {
     const foot = [s.zone, s.telephone, s.email, s.tva ? "TVA " + s.tva : ""].filter(Boolean).join("   ·   ");
     doc.text(foot, W / 2, fy, { align: "center" });
   };
-  const ensure = (h) => { if (y + h > 280) { footer(); doc.addPage(); header(); } };
+  const ensure = (h) => { if (y + h > 280) { footer(); doc.addPage(); header(); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(40, 42, 54); } };
   const sec = (t) => { ensure(11); doc.setFillColor(245, 240, 232); doc.rect(M, y, W - 2 * M, 6.5, "F"); doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(181, 134, 58); doc.text(t.toUpperCase(), M + 2, y + 4.6); y += 10; };
   const kv = (k, v, x, w) => { doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(26, 31, 46); doc.text(k, x, y); doc.setFont("helvetica", "normal"); doc.setTextColor(40, 42, 54); const lines = doc.splitTextToSize(String(v || "—"), w); doc.text(lines, x + 30, y); return lines.length; };
   const box = (x, yy, on) => { doc.setDrawColor(120); doc.setLineWidth(0.3); doc.rect(x, yy - 3, 3, 3); if (on) { doc.setDrawColor(62, 142, 90); doc.setLineWidth(0.6); doc.line(x + 0.5, yy - 1.4, x + 1.3, yy - 0.6); doc.line(x + 1.3, yy - 0.6, x + 2.7, yy - 2.6); } };
@@ -833,12 +833,16 @@ async function buildIpmPdf(report, client, s, contrat) {
   sec("Actions réalisées"); checks(actionsFor(report.especesList, report.actions), report.actions);
 
   sec("Relevé des postes & pièges");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(95, 95, 95);
-  doc.text("N°", M, y); doc.text("Emplacement", M + 12, y); doc.text("Type", M + 78, y); doc.text("Conso", M + 120, y); doc.text("État", M + 138, y); doc.text("Action", M + 160, y); y += 1.5;
-  doc.setDrawColor(210); doc.setLineWidth(0.2); doc.line(M, y, W - M, y); y += 4;
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(40, 42, 54);
+  const relHead = () => {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(95, 95, 95);
+    doc.text("N°", M, y); doc.text("Emplacement", M + 12, y); doc.text("Type", M + 78, y); doc.text("Conso", M + 120, y); doc.text("État", M + 138, y); doc.text("Action", M + 160, y); y += 1.5;
+    doc.setDrawColor(210); doc.setLineWidth(0.2); doc.line(M, y, W - M, y); y += 4;
+  };
+  relHead();
   (report.equipements || []).forEach((e) => {
-    ensure(6);
+    if (y + 6 > 280) { ensure(6); relHead(); }
+    // Police/couleur remises à chaque ligne : après un saut de page, header() laisse la couleur crème de l'en-tête
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(40, 42, 54);
     doc.text(String(e.numero || "—"), M, y);
     doc.text(doc.splitTextToSize(e.emplacement || "—", 62)[0], M + 12, y);
     doc.text((e.type || "").split(" - ")[0], M + 78, y);
@@ -847,7 +851,7 @@ async function buildIpmPdf(report, client, s, contrat) {
     doc.text(doc.splitTextToSize(e.action || "—", 36)[0], M + 160, y);
     y += 5.5;
   });
-  if (!(report.equipements || []).length) { doc.text("Aucun poste enregistré.", M, y); y += 6; }
+  if (!(report.equipements || []).length) { doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(40, 42, 54); doc.text("Aucun poste enregistré.", M, y); y += 6; }
   y += 2;
 
   if ((report.produits || []).length) {
