@@ -880,6 +880,21 @@ async function buildIpmPdf(report, client, s, contrat) {
   y += 4;
 
   // Photos (avant les signatures, comme sur le rapport de référence)
+  // fitPhoto : place la photo entière dans le cadre sans la déformer (proportions conservées, centrée, fond clair)
+  const fitPhoto = (src, ratio) => new Promise((rs) => {
+    const img = new Image();
+    img.onload = () => {
+      const H = 900, Wc = Math.round(H * ratio);
+      const cv = document.createElement("canvas"); cv.width = Wc; cv.height = H;
+      const g = cv.getContext("2d"); g.fillStyle = "#F5F0E8"; g.fillRect(0, 0, Wc, H);
+      const sc = Math.min(Wc / img.naturalWidth, H / img.naturalHeight);
+      const iw = img.naturalWidth * sc, ih = img.naturalHeight * sc;
+      g.drawImage(img, (Wc - iw) / 2, (H - ih) / 2, iw, ih);
+      rs(cv.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => rs(src);
+    img.src = src;
+  });
   const phs = report.photos || [];
   if (phs.length) {
     const map = await signedUrls(phs.map((p) => p.path));
@@ -889,7 +904,7 @@ async function buildIpmPdf(report, client, s, contrat) {
       if (i % 2 === 0) ensure(ch + 4);
       const url = map[phs[i].path]; const x = M + (i % 2) * (cw + 6);
       if (url) {
-        try { const res = await fetch(url); const blob = await res.blob(); const dataUrl = await new Promise((rs) => { const fr = new FileReader(); fr.onload = () => rs(fr.result); fr.readAsDataURL(blob); }); doc.addImage(dataUrl, "JPEG", x, y, cw, ch); doc.setDrawColor(210); doc.rect(x, y, cw, ch); } catch (e) {}
+        try { const res = await fetch(url); const blob = await res.blob(); const dataUrl = await new Promise((rs) => { const fr = new FileReader(); fr.onload = () => rs(fr.result); fr.readAsDataURL(blob); }); const fit = await fitPhoto(dataUrl, cw / ch); doc.addImage(fit, "JPEG", x, y, cw, ch); doc.setDrawColor(210); doc.rect(x, y, cw, ch); } catch (e) {}
       }
       if (i % 2 === 1) y += ch + 4;
     }
